@@ -107,3 +107,50 @@ def test_stream_over_max_size_cleans_partial(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="tamanho máximo"):
         cobalt._download_stream("https://media.example/video.mp4", tmp_path)
     assert not (tmp_path / "original.mp4").exists()
+
+def test_cobalt_http_400_exposes_structured_error_without_context(monkeypatch):
+    import json
+    import urllib.error
+
+    error_payload = {
+        "status": "error", "error": {
+            "code": "error.api.youtube.login",
+            "context": {"private": "Never disclose this token or user data"},
+        }
+    }
+
+    class FakeOpener:
+        def open(self, req, timeout=None):
+            raise urllib.error.HTTPError(
+                req.full_url, 400, "Bad Request", {},
+                io.BytesIO(json.dumps(error_payload).encode()),
+            )
+
+    monkeypatch.setattr(cobalt, "_OPENER", FakeOpener())
+    data = cobalt._cobalt_request(
+        "https://owned.example/", "https://www.youtube.com/watch?v=JM1gEnmaUao", "test-key"
+    )
+    assert data == {"status": "error", "error": {"code": "error.api.youtube.login"}}
+    assert "private" not in str(data)
+
+
+def test_cobalt_http_400_bad_json_is_safe(monkeypatch):
+    import urllib.error
+
+    class FakeOpener:
+        def open(self, req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {}, io.BytesIO(b"<html>Bad Request</html>"))
+
+    monkeypatch.setattr(cobalt, "_OPENER", FakeOpener())
+    with pytest.raises(ValueError, match="HTTP 400 sem código detalhado"):
+        cobalt._cobalt_request("https://owned.example/", "https://youtu.be/abcd", "test-key")
+
+
+def test_cobalt_youtube_login_message(monkeypatch, tmp_path):
+    monkeypatch.setenv("COBALT_API_URL", "https://cobalt.owned.example")
+    monkeypatch.setattr(cobalt.socket, "getaddrinfo", public_dns)
+    monkeypatch.setattr(cobalt, "_cobalt_request", lambda *args: {
+        "status": "error", "error": {"code": "error.api.youtube.login"}
+    })
+    with pytest.raises(ValueError, match="YouTube exigiu uma verificação"):
+        cobalt.download_source("https://youtu.be/JM1gEnmaUao", tmp_path)
