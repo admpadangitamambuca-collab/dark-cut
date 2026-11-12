@@ -1,3 +1,24 @@
+# DarkCut AI 2.4 — Envio de MP4 (Snaptube / Android)
+
+**Novo modo principal:** baixe um vídeo que tenha permissão de editar no Snaptube (Android), depois selecione o arquivo MP4 na aba **Enviar MP4** do DarkCut AI. O site o envia ao motor Python no Render, que transcreve e gera cortes verticais e horizontais automaticamente, com títulos, hashtags e resumos. Não publica nas plataformas.
+
+O botão **Colar link** continua como opção secundária para links diretos. A obtenção de vídeos do YouTube pelo Cobalt continua sujeita a restrições da origem; ela **não é utilizada** no fluxo de envio de arquivos e o Snaptube **não** está integrado via API.
+
+## Publicação
+
+- `site/` no Netlify; `site/config.js` já contém a URL pública do worker Render.
+- `worker/` no Render, incluindo o novo endpoint `POST /api/upload-jobs` com `multipart/form-data`.
+- O frontend atual precisa ser publicado pelo Netlify via GitHub ou ZIP atualizado; atualizar somente o Render não muda o site publicado.
+- Não é necessário executar o Snaptube no servidor: ele é utilizado no aparelho Android para baixar o vídeo manualmente.
+
+## Limites
+
+`MAX_UPLOAD_BYTES=157286400` (150 MiB padrão). Envio progressivo, reserva de uma tarefa por vez e verificação mínima do cabeçalho MP4. Não é proteção contra todos os arquivos maliciosos; use somente vídeos confiáveis. O limite não inclui tráfego/formulário. Para lives longas, vídeos grandes ou uso público contínuo, o Render gratuito pode falhar por memória, espaço e limites de duração. Arquivos de trabalho são efêmeros e expiram; o servidor ainda não possui autenticação nem rate limiting por usuário — não divulgue como serviço público sem endurecimento.
+
+Para testar: escolha um MP4 pequeno (< 30 MB) com voz e marque **1 corte**. O download de mídia em origem externa não será usado; o processamento depende de FFmpeg e Faster-Whisper.
+
+O código do processamento de transcrição/cortes é a mesma base anterior; não há garantia de processamento real antes do primeiro teste no Render.
+
 # DarkCut AI 2.2 — Creative Studio
 
 Atualização visual e funcional do gerador de cortes. Interface em português brasileiro, pronta para hospedar no **Netlify**, mais um serviço de processamento separado em Python/FFmpeg.

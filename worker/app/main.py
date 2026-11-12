@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -22,21 +22,25 @@ from .engine import ai_metadata, download_source, inspect_duration, render_clip,
 ROOT = Path(os.getenv("DATA_DIR", "/tmp/darkcut-jobs"))
 ROOT.mkdir(parents=True, exist_ok=True)
 MAX_JOBS = max(1, int(os.getenv("MAX_CONCURRENT_JOBS", "1")))
+MAX_UPLOAD_BYTES = max(1, int(os.getenv("MAX_UPLOAD_BYTES", str(150 * 1024 * 1024))))
 POOL = ThreadPoolExecutor(max_workers=MAX_JOBS)
 LOCK = threading.Lock()
 ACTIVE = set()
-app = FastAPI(title="DarkCut AI Worker", version="2.2.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="DarkCut AI Worker", version="2.4.0", docs_url=None, redoc_url=None)
 allowed = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:8888,http://localhost:8000").split(",") if s.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed, allow_credentials=False,
                    allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
 
-class JobRequest(BaseModel):
-    url: str = Field(min_length=12, max_length=2048)
+class JobSettings(BaseModel):
     count: int = Field(default=3, ge=1, le=8)
     min_seconds: int = Field(default=25, ge=10, le=90)
     max_seconds: int = Field(default=65, ge=15, le=120)
     subtitles: bool = True
+
+
+class JobRequest(JobSettings):
+    url: str = Field(min_length=12, max_length=2048)
 
 
 def snapshot(job_id: str) -> dict:
@@ -54,7 +58,7 @@ def save(job_id: str, state: dict) -> None:
     tmp.replace(p / "status.json")
 
 
-def do_job(job_id: str, payload: JobRequest) -> None:
+def do_job(job_id: str, payload: JobSettings, uploaded_source: Path | None = None) -> None:
     directory = ROOT / job_id
     state = snapshot(job_id)
 
@@ -63,7 +67,11 @@ def do_job(job_id: str, payload: JobRequest) -> None:
         save(job_id, state)
 
     try:
-        source = download_source(payload.url, directory, progress)
+        if uploaded_source is None:
+            source = download_source(payload.url, directory, progress)
+        else:
+            progress(20, "Arquivo recebido. Iniciando a análise do vídeo")
+            source = uploaded_source
         duration = inspect_duration(source)
         segments = transcribe(source, progress)
         progress(47, "Selecionando trechos de maior interesse")
@@ -120,9 +128,78 @@ def cleanup_old_jobs():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "2.2.0", "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
+    return {"ok": True, "version": "2.4.0", "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
             "transcription_model": os.getenv("WHISPER_MODEL", "base"),
-            "download_engine": "cobalt", "cobalt_configured": bool(os.getenv("COBALT_API_URL", "").strip())}
+            "download_engine": "cobalt", "cobalt_configured": bool(os.getenv("COBALT_API_URL", "").strip()),
+            "file_upload_enabled": True, "max_upload_bytes": MAX_UPLOAD_BYTES}
+
+
+def reserve_job(message: str = "Preparando processamento") -> str:
+    with LOCK:
+        if len(ACTIVE) >= MAX_JOBS:
+            raise HTTPException(429, "O motor está ocupado. Tente novamente após finalizar o corte atual.")
+        cleanup_old_jobs()
+        job_id = uuid.uuid4().hex
+        ACTIVE.add(job_id)
+    state = {"id": job_id, "status": "processing", "progress": 2, "message": message,
+             "clips": [], "bundle_url": None, "created_at": int(time.time())}
+    try:
+        save(job_id, state)
+    except Exception:
+        with LOCK:
+            ACTIVE.discard(job_id)
+        raise
+    return job_id
+
+
+@app.post("/api/upload-jobs", status_code=202)
+async def upload_job(
+    file: UploadFile = File(...),
+    count: int = Form(default=3, ge=1, le=8),
+    min_seconds: int = Form(default=25, ge=10, le=90),
+    max_seconds: int = Form(default=65, ge=15, le=120),
+    subtitles: bool = Form(default=True),
+):
+    """Accept an owner-supplied MP4 (for example from Snaptube), then reuse the clip pipeline.
+
+    Public prototype: bounded file size/concurrency, ephemeral disk, not production-grade auth.
+    """
+    if min_seconds > max_seconds:
+        raise HTTPException(422, "A duração mínima não pode ultrapassar a máxima.")
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".mp4"):
+        raise HTTPException(415, "Envie um arquivo MP4 (.mp4). Se necessário, exporte ou converta seu vídeo para MP4.")
+    if file.content_type not in ("video/mp4", "application/octet-stream", "application/mp4", None):
+        raise HTTPException(415, "O arquivo selecionado não foi identificado como MP4.")
+    job_id = reserve_job("Recebendo arquivo MP4")
+    directory = ROOT / job_id
+    target = directory / "original.mp4"
+    try:
+        size = 0
+        with target.open("xb") as dest:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, f"Arquivo muito grande. Limite: {MAX_UPLOAD_BYTES // 1048576} MB.")
+                dest.write(chunk)
+        with target.open("rb") as source:
+            signature = source.read(12)
+        if len(signature) < 12 or signature[4:8] != b"ftyp":
+            raise HTTPException(415, "O arquivo não possui uma estrutura MP4 válida.")
+        payload = JobSettings(count=count, min_seconds=min_seconds,
+                              max_seconds=max_seconds, subtitles=subtitles)
+        POOL.submit(do_job, job_id, payload, target)
+        return snapshot(job_id)
+    except Exception:
+        with LOCK:
+            ACTIVE.discard(job_id)
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    finally:
+        await file.close()
 
 
 @app.post("/api/jobs", status_code=202)
@@ -133,17 +210,9 @@ def start_job(payload: JobRequest):
         payload.url = validate_source_url(payload.url)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    with LOCK:
-        if len(ACTIVE) >= MAX_JOBS:
-            raise HTTPException(429, "O motor está ocupado. Tente novamente após finalizar o corte atual.")
-        cleanup_old_jobs()
-        job_id = uuid.uuid4().hex
-        ACTIVE.add(job_id)
-    state = {"id": job_id, "status": "processing", "progress": 2, "message": "Preparando processamento",
-             "clips": [], "bundle_url": None, "created_at": int(time.time())}
-    save(job_id, state)
+    job_id = reserve_job()
     POOL.submit(do_job, job_id, payload)
-    return state
+    return snapshot(job_id)
 
 
 @app.get("/api/jobs/{job_id}")

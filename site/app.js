@@ -2,7 +2,9 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const els = {
-    form: $('create-form'), url: $('video-url'), count: $('clip-count'), length: $('clip-length'),
+    form: $('create-form'), url: $('video-url'), file: $('video-file'),
+    fileDetails: $('upload-file-details'), modeFile: $('mode-file'), modeLink: $('mode-link'),
+    filePanel: $('source-file-panel'), linkPanel: $('source-link-panel'), count: $('clip-count'), length: $('clip-length'),
     subtitles: $('include-subtitles'), error: $('form-error'), button: $('generate-btn'),
     buttonLabel: $('generate-label'), progress: $('progress-panel'), stage: $('job-stage'),
     percent: $('progress-number'), fill: $('progress-fill'), empty: $('results-empty'),
@@ -12,6 +14,7 @@
   };
   const initialUrl = (window.DARKCUT_CONFIG?.workerUrl || '').trim().replace(/\/$/, '');
   let worker = initialUrl || (localStorage.getItem('darkcut_worker') || '').trim().replace(/\/$/, '');
+  let sourceMode = 'file';
   let currentJob = null;
   let timer = null;
   let view = {};
@@ -29,6 +32,9 @@
   };
   function markBusy(busy) {
     els.button.disabled = busy;
+    els.modeFile.disabled = busy;
+    els.modeLink.disabled = busy;
+    els.file.disabled = busy;
     els.buttonLabel.textContent = busy ? 'Processando seu vídeo…' : 'Gerar cortes com IA';
   }
   function showProgress(pct, message) {
@@ -37,6 +43,56 @@
     els.fill.style.width = `${Math.max(0, Math.min(100, pct || 0))}%`;
     els.stage.textContent = message || 'Processando…';
   }
+  function setSourceMode(mode) {
+    sourceMode = mode;
+    const fileMode = mode === 'file';
+    els.filePanel.hidden = !fileMode;
+    els.linkPanel.hidden = fileMode;
+    els.file.required = fileMode;
+    els.url.required = !fileMode;
+    for (const [btn, active] of [[els.modeFile, fileMode], [els.modeLink, !fileMode]]) {
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    setMessage('');
+  }
+  els.modeFile.addEventListener('click', () => setSourceMode('file'));
+  els.modeLink.addEventListener('click', () => setSourceMode('link'));
+  els.file.addEventListener('change', () => {
+    const selected = els.file.files?.[0];
+    els.fileDetails.textContent = selected
+      ? `${selected.name} · ${(selected.size / 1048576).toFixed(1)} MB · máximo 150 MB`
+      : 'Limite de 150 MB por arquivo nesta versão de testes. Use vídeos que você pode editar.';
+  });
+  setSourceMode('file');
+
+  function uploadFile(formData) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('POST', worker + '/api/upload-jobs');
+      request.timeout = 10 * 60 * 1000;
+      request.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round(event.loaded / event.total * 100);
+          showProgress(Math.min(18, Math.max(2, Math.round(percent * 0.18))), `Enviando MP4 ao motor… ${percent}%`);
+        }
+      });
+      request.addEventListener('load', () => {
+        let data;
+        try { data = JSON.parse(request.responseText); }
+        catch (_) { reject(new Error('O motor retornou uma resposta inválida durante o envio.')); return; }
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(typeof data.detail === 'string' ? data.detail : 'Falha ao enviar o arquivo.'));
+          return;
+        }
+        resolve(data);
+      });
+      request.addEventListener('error', () => reject(new Error('Falha de rede durante o envio. Tente um MP4 menor.')));
+      request.addEventListener('timeout', () => reject(new Error('O envio excedeu o tempo limite. Tente um vídeo menor.')));
+      request.send(formData); // Browser sets multipart boundary automatically.
+    });
+  }
+
   async function api(route, options = {}) {
     const timeout = AbortSignal.timeout(25000);
     let response;
@@ -60,6 +116,12 @@
     if (timer) clearTimeout(timer);
     const parts = els.length.value.split(',').map(Number);
     const payload = { url: els.url.value.trim(), count: Number(els.count.value), min_seconds:parts[0], max_seconds:parts[1], subtitles:els.subtitles.checked };
+    const file = sourceMode === 'file' ? els.file.files?.[0] : null;
+    if (sourceMode === 'file') {
+      if (!file) { setMessage('Selecione primeiro um vídeo MP4.'); return; }
+      if (!file.name.toLowerCase().endsWith('.mp4')) { setMessage('O arquivo deve estar em formato MP4.'); return; }
+      if (file.size > 150 * 1048576) { setMessage('Arquivo muito grande para este servidor gratuito. Limite: 150 MB.'); return; }
+    }
     markBusy(true);
     showProgress(2, 'Enviando projeto ao servidor…');
     els.list.replaceChildren();
@@ -67,7 +129,17 @@
     els.downloadAll.hidden = true;
     els.resultCount.textContent = '';
     try {
-      const job = await api('/api/jobs', { method:'POST', body:JSON.stringify(payload) });
+      let job;
+      if (sourceMode === 'file') {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        for (const key of ['count', 'min_seconds', 'max_seconds', 'subtitles']) {
+          form.append(key, String(payload[key]));
+        }
+        job = await uploadFile(form);
+      } else {
+        job = await api('/api/jobs', { method:'POST', body:JSON.stringify(payload) });
+      }
       currentJob = job.id;
       await poll(job.id);
     } catch (e) {

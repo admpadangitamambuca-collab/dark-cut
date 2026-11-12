@@ -1,4 +1,2 @@
-// ATENÇÃO: configurar APENAS a URL pública do worker, nunca chaves privadas aqui.
-window.DARKCUT_CONFIG = {
-  workerUrl: "" // Exemplo: "https://darkcut-worker-abcdef-uc.a.run.app"
-};
+// Public worker endpoint only. Do not put API keys or secrets in frontend code.
+window.DARKCUT_CONFIG = { workerUrl: "https://darkcut-ai-worker-nbs4.onrender.com" };
