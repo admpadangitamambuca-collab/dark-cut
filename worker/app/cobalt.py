@@ -113,12 +113,30 @@ def _cobalt_request(endpoint: str, youtube_url: str, key: str) -> dict:
             body = response.read(256 * 1024 + 1)
     except urllib.error.HTTPError as exc:
         status = exc.code
-        exc.close()
+        # Cobalt intentionally returns HTTP 400 with a structured JSON error.
+        # Preserve only the machine-readable error code: never leak response context,
+        # internal URLs, response headers, request credentials or authentication tokens.
+        try:
+            error_body = exc.read(64 * 1024 + 1)
+        except (OSError, ValueError):
+            error_body = b""
+        finally:
+            exc.close()
         if status in (401, 403):
             raise ValueError("A instância Cobalt recusou a autorização de acesso (HTTP 401/403).") from exc
         if status == 429:
             raise ValueError("A instância Cobalt atingiu seu limite de solicitações. Tente novamente mais tarde.") from exc
-        raise ValueError(f"A instância Cobalt retornou erro HTTP {status}.") from exc
+        if status == 400 and len(error_body) <= 64 * 1024:
+            try:
+                error_data = json.loads(error_body)
+            except (ValueError, UnicodeDecodeError):
+                error_data = None
+            if isinstance(error_data, dict) and error_data.get("status") == "error":
+                error = error_data.get("error")
+                code = error.get("code") if isinstance(error, dict) else None
+                if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,120}", code):
+                    return {"status": "error", "error": {"code": code}}
+        raise ValueError(f"A instância Cobalt retornou erro HTTP {status} sem código detalhado.") from exc
     except urllib.error.URLError as exc:
         raise ValueError("Não foi possível estabelecer conexão com a instância Cobalt configurada.") from exc
     if len(body) > 256 * 1024:
@@ -157,10 +175,17 @@ def download_source(url: str, directory: Path) -> Path:
     data = _cobalt_request(instance.rstrip("/") + "/", url, os.getenv("COBALT_API_KEY", "").strip())
     status = data.get("status")
     if status == "error":
-        code = str((data.get("error") or {}).get("code", "desconhecido"))
-        if not re.fullmatch(r"[a-zA-Z0-9._-]{1,120}", code):
+        details = data.get("error")
+        code = details.get("code") if isinstance(details, dict) else None
+        if not isinstance(code, str) or not re.fullmatch(r"[a-zA-Z0-9._-]{1,120}", code):
             code = "inesperado"
-        raise ValueError(f"A instância Cobalt não conseguiu obter este vídeo ({code}).")
+        if "youtube" in code.lower() and any(part in code.lower() for part in ("login", "auth", "bot")):
+            raise ValueError(
+                "O YouTube exigiu uma verificação de acesso para este vídeo e a instância "
+                f"Cobalt não conseguiu obtê-lo (código: {code}). "
+                "Não insira senhas nem cookies no DarkCut AI."
+            )
+        raise ValueError(f"A instância Cobalt não conseguiu obter este vídeo (código: {code}).")
     if status in ("local-processing", "picker"):
         raise ValueError(
             "A instância Cobalt solicitou processamento local ou seleção manual, "
