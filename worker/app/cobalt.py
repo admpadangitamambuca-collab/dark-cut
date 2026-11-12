@@ -179,6 +179,15 @@ def download_source(url: str, directory: Path) -> Path:
         code = details.get("code") if isinstance(details, dict) else None
         if not isinstance(code, str) or not re.fullmatch(r"[a-zA-Z0-9._-]{1,120}", code):
             code = "inesperado"
+        if code == "error.api.fetch.fail":
+            raise ValueError(
+                "O Cobalt não conseguiu buscar o vídeo no YouTube (error.api.fetch.fail). "
+                "O YouTube pode estar limitando o acesso do servidor ou a comunicação com "
+                "a plataforma pode ter falhado. O motor de cortes está online, mas a mídia "
+                "não foi obtida. Para continuar com este conteúdo, use um link HTTPS direto "
+                "de um arquivo de vídeo que você tem permissão para utilizar (.mp4, .mov, .webm). "
+                "Não envie cookies ou senhas ao DarkCut AI."
+            )
         if "youtube" in code.lower() and any(part in code.lower() for part in ("login", "auth", "bot")):
             raise ValueError(
                 "O YouTube exigiu uma verificação de acesso para este vídeo e a instância "
