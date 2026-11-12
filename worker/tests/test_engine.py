@@ -1,4 +1,4 @@
-from app.engine import select_clips, extractive_metadata, srt_timestamp, write_srt, validate_source_url, user_friendly_download_error
+from app.engine import select_clips, extractive_metadata, srt_timestamp, write_srt, validate_source_url
 import pytest
 
 
@@ -33,15 +33,3 @@ def test_bad_url():
 
 def test_youtube_url():
     assert validate_source_url("https://www.youtube.com/watch?v=abcd1234")
-
-
-def test_youtube_bot_block_message():
-    original = "ERROR: [youtube] JM1gEnmaUao: Sign in to confirm you’re not a bot. Use --cookies."
-    error = user_friendly_download_error(RuntimeError(original))
-    assert "YouTube" in error
-    assert "Nao informe senha nem cookies" in error
-    assert "--cookies" not in error
-
-
-def test_youtube_private_message():
-    assert "privado" in user_friendly_download_error(RuntimeError("This video is private"))

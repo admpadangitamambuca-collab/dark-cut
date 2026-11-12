@@ -59,62 +59,12 @@ def run_command(args: list[str], timeout: int = 1200) -> None:
 
 
 
-def user_friendly_download_error(error: Exception) -> str:
-    """Explain access restrictions without exposing raw yt-dlp output or credentials."""
-    message = str(error)
-    lower = message.lower()
-    if "sign in to confirm" in lower and "bot" in lower:
-        return (
-            "O YouTube exigiu uma verificacao de acesso e bloqueou o download neste servidor. "
-            "Esse bloqueio nao e causado pelo DarkCut AI e nao se resolve apenas tentando o mesmo link. "
-            "Para continuar, use um link HTTPS direto de um arquivo de video publico (.mp4, .mov, .webm) "
-            "que voce tenha permissao para processar, ou configure uma fonte autorizada de midia. "
-            "Nao informe senha nem cookies de sua conta no site."
-        )
-    if "private video" in lower or "this video is private" in lower:
-        return "O video e privado e o servidor nao possui permissao de acesso. Use uma fonte autorizada."
-    return message[-600:]
-
 
 def download_source(url: str, folder: Path, progress: Callable[[int, str], None]) -> Path:
-    import yt_dlp
-
-    progress(9, "Baixando o conteúdo original")
-    # yt-dlp supports normal YouTube video and archived live streams.
-    options = {
-        "outtmpl": str(folder / "original.%(ext)s"),
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-        "merge_output_format": "mp4",
-        "noplaylist": True,
-        "max_filesize": int(os.getenv("MAX_SOURCE_BYTES", "1073741824")),
-        "quiet": True,
-        "no_warnings": True,
-        "retries": 2,
-        "socket_timeout": 30,
-        "windowsfilenames": True,
-    }
-    # Optional authenticated access for a server-side owner-controlled secret file.
-    # Never accept cookies from a browser request or place them in GitHub/frontend.
-    is_youtube = (urllib.parse.urlparse(url).hostname or "").lower() in {
-        "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be", "music.youtube.com"
-    }
-    cookie_path = os.getenv("YTDLP_COOKIES_FILE", "").strip()
-    if is_youtube and cookie_path:
-        if not Path(cookie_path).is_file():
-            raise RuntimeError("Arquivo privado de autenticacao do YouTube nao esta disponivel no servidor.")
-        options["cookiefile"] = cookie_path
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            ydl.download([url])
-    except yt_dlp.utils.DownloadError as exc:
-        raise ValueError(user_friendly_download_error(exc)) from exc
-    files = [p for p in folder.glob("original.*") if p.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".m4v"}]
-    if not files:
-        raise ValueError("O vídeo não pôde ser acessado. Lives ainda em andamento podem precisar ser arquivadas primeiro.")
-    source = max(files, key=lambda f: f.stat().st_size)
-    if source.stat().st_size > int(os.getenv("MAX_SOURCE_BYTES", "1073741824")):
-        raise ValueError("O arquivo excede o limite de 1 GB configurado.")
-    return source
+    """Acquire YouTube media exclusively through an authorized Cobalt instance."""
+    from .cobalt import download_source as cobalt_download
+    progress(9, "Solicitando o vídeo ao Cobalt")
+    return cobalt_download(url, folder)
 
 
 def inspect_duration(source: Path) -> float:

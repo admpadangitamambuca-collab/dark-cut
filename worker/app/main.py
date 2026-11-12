@@ -121,7 +121,8 @@ def cleanup_old_jobs():
 @app.get("/api/health")
 def health():
     return {"ok": True, "version": "2.2.0", "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
-            "transcription_model": os.getenv("WHISPER_MODEL", "base")}
+            "transcription_model": os.getenv("WHISPER_MODEL", "base"),
+            "download_engine": "cobalt", "cobalt_configured": bool(os.getenv("COBALT_API_URL", "").strip())}
 
 
 @app.post("/api/jobs", status_code=202)

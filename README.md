@@ -5,7 +5,7 @@ Atualização visual e funcional do gerador de cortes. Interface em português b
 **O que faz**
 
 1. Recebe um link de vídeo do YouTube, live **arquivada** ou arquivo direto de vídeo público via HTTPS.
-2. Baixa o conteúdo para o worker, transcreve a fala com Faster-Whisper e identifica trechos interessantes usando texto e pontuação contextual.
+2. Obtém o conteúdo via Cobalt (para YouTube) ou link direto de mídia, transcreve a fala com Faster-Whisper e identifica trechos interessantes usando texto e pontuação contextual.
 3. Exporta cada trecho em **vertical 720 × 1280** e **horizontal 1280 × 720**, ambos MP4; legendas automáticas opcionais.
 4. Cria **um título, hashtags e um resumo por corte**, fundamentados na transcrição do trecho. Com `OPENAI_API_KEY` configurada, esse material é criado por modelo de linguagem; sem chave, oferece sugestões **extrativas**, claramente identificadas na interface como tal.
 5. Mostra prévia dos dois formatos, abas independentes Título / Hashtags / Resumo, botões para copiar e download de cada MP4 ou ZIP total (incluindo JSON de metadados).
@@ -20,7 +20,8 @@ site/app.js           Envio de jobs, progresso, resultados, tabs e copiar
 site/config.js        Endereço público do worker (NUNCA chave de IA)
 netlify.toml          Publica a pasta site no Netlify
 worker/app/main.py    API FastAPI + jobs + downloads
-worker/app/engine.py  Download, transcrição, ranking, IA, legendas e renders
+worker/app/engine.py  Transcrição, ranking, IA, legendas e renders
+worker/app/cobalt.py  Download de vídeos YouTube via Cobalt autorizado
 worker/requirements.txt
 worker/Dockerfile
 worker/tests/         Testes unitários
@@ -93,7 +94,7 @@ gcloud run deploy darkcut-worker \
 
 ## Limitações técnicas, testes e melhorias de produção
 
-- **Não foi possível executar um vídeo do YouTube real neste ambiente**, nem instalar/rodar Faster-Whisper nesta sessão. A integração YouTube/Whisper/IA deverá ser validada com internet e segredos adequados no worker após deploy. `yt-dlp` pode precisar de atualização, e vídeos com DRM, login ou transmissões ao vivo ainda em andamento podem não funcionar.
+- **Não foi possível executar um vídeo do YouTube real neste ambiente**, nem instalar/rodar Faster-Whisper nesta sessão. A integração YouTube/Whisper/IA deverá ser validada com internet e segredos adequados no worker após deploy. Uma instância Cobalt própria ou autorizada é necessária para links do YouTube; vídeos com DRM, login ou transmissões ainda em andamento podem não funcionar.
 - O algoritmo atual seleciona candidatos por **pistas textuais e transcrição**, não por um modelo treinado para prever viralização. Não há garantia de que os trechos serão os melhores em todos os casos. O enquadramento vertical é centralizado; ainda não usa rastreamento automático de rostos.
 - Sem chave configurada, o sistema **não finge** usar uma IA de linguagem para títulos, resumos e hashtags: a interface exibe *Sugestão baseada na transcrição*.
 - Os jobs rodam em thread dentro do mesmo processo; os arquivos são guardados no disco local efêmero do contêiner. O modo `min-instances=1` e CPU sempre alocada é uma **configuração de protótipo**. Para serviço público/alta escala, implemente fila durável, armazenamento de objetos, autenticação, controle de custos, reintentos, antivírus, limpeza periódica e proteção contra abuso. Reinicializações da instância podem perder jobs.
@@ -107,3 +108,7 @@ gcloud run deploy darkcut-worker \
 - Exportação real pelo FFmpeg testada com vídeo sintético e legenda, confirmando **720×1280** e **1280×720**.
 
 **Versão:** 2.2 (reconstrução da especificação v2.1 + novas abas e design; não é patch binário do ZIP v2.1 porque o arquivo anterior não estava acessível nesta sessão).
+
+## Motor de download Cobalt (sem yt-dlp)
+
+O único mecanismo de obtenção de vídeos do YouTube é o **Cobalt**, configurável via `COBALT_API_URL` e `COBALT_API_KEY` no servidor. A instância deve ser própria ou autorizada; serviços Cobalt públicos não autorizam por padrão o uso automatizado por outros produtos. Consulte [COBALT_SETUP.md](COBALT_SETUP.md). O Cobalt não garante eliminar bloqueios do YouTube e a versão gratuita do Render possui recursos limitados.
