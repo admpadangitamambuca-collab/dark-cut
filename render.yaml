@@ -1,0 +1,27 @@
+# DarkCut AI v2.2 — Render Web Service (worker de processamento)
+# Implantacao inicial em plano gratuito para verificar a API.
+# AVISO: processamento de video/Whisper pode exceder 512 MB e 0.1 CPU.
+# Trocar o plano conscientemente no Render para cargas reais.
+services:
+  - type: web
+    name: darkcut-ai-worker
+    runtime: docker
+    repo: https://github.com/admpadangitamambuca-collab/dark-cut
+    branch: main
+    plan: free
+    region: virginia
+    autoDeployTrigger: commit
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: ./worker
+    healthCheckPath: /api/health
+    buildFilter:
+      paths:
+        - worker/**
+        - render.yaml
+    envVars:
+      - key: WHISPER_MODEL
+        value: tiny
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: JOB_TTL_HOURS
+        value: "24"
