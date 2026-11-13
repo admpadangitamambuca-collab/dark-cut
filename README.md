@@ -1,135 +1,100 @@
-# DarkCut AI 2.4 — Envio de MP4 (Snaptube / Android)
+# DarkCut AI 3.0 — File Studio
 
-**Novo modo principal:** baixe um vídeo que tenha permissão de editar no Snaptube (Android), depois selecione o arquivo MP4 na aba **Enviar MP4** do DarkCut AI. O site o envia ao motor Python no Render, que transcreve e gera cortes verticais e horizontais automaticamente, com títulos, hashtags e resumos. Não publica nas plataformas.
+**Novo fluxo:** o usuário seleciona o **arquivo completo MP4** do celular ou computador. O site envia o vídeo em partes de 4 MiB ao motor Python (Render). O motor analisa a transcrição, seleciona trechos interessantes e entrega **para cada corte**:
 
-O botão **Colar link** continua como opção secundária para links diretos. A obtenção de vídeos do YouTube pelo Cobalt continua sujeita a restrições da origem; ela **não é utilizada** no fluxo de envio de arquivos e o Snaptube **não** está integrado via API.
+- **Shorts vertical 9:16**, MP4 720 × 1280.
+- **Corte tradicional horizontal 16:9**, MP4 1280 × 720.
+- **Título**, **descrição**, **legenda para publicar** e **hashtags**, em abas separadas e com botões de copiar.
+- ZIP com os MP4, um TXT de publicação para cada corte e um JSON dos metadados.
 
-## Publicação
+Não publica automaticamente em plataformas. Não é preciso informar um link do YouTube nem conectar Snaptube, Cobalt ou outro downloader. O usuário obtém o arquivo de forma autorizada por seus próprios meios e faz upload.
 
-- `site/` no Netlify; `site/config.js` já contém a URL pública do worker Render.
-- `worker/` no Render, incluindo o novo endpoint `POST /api/upload-jobs` com `multipart/form-data`.
-- O frontend atual precisa ser publicado pelo Netlify via GitHub ou ZIP atualizado; atualizar somente o Render não muda o site publicado.
-- Não é necessário executar o Snaptube no servidor: ele é utilizado no aparelho Android para baixar o vídeo manualmente.
+## Arquivos
 
-## Limites
+| Caminho | Função |
+|---|---|
+| `site/index.html` | Formulário de arquivo, prévia, configurações, resultados e abas |
+| `site/styles.css` | Design responsivo |
+| `site/app.js` | Upload em partes, progresso, polling, prévias, cópia e download |
+| `site/config.js` | URL pública do motor (sem segredos) |
+| `worker/app/main.py` | API de upload, processamento, status, arquivos e ZIP |
+| `worker/app/engine.py` | FFmpeg, transcrição, seleção, geração de metadados |
+| `worker/tests/` | Testes de upload, segurança básica, exportação e legendas |
+| `worker/Dockerfile` | Contêiner Python + FFmpeg |
+| `render.yaml` | Modelo de serviço gratuito no Render |
+| `netlify.toml` | Publica o diretório `site` |
 
-`MAX_UPLOAD_BYTES=157286400` (150 MiB padrão). Envio progressivo, reserva de uma tarefa por vez e verificação mínima do cabeçalho MP4. Não é proteção contra todos os arquivos maliciosos; use somente vídeos confiáveis. O limite não inclui tráfego/formulário. Para lives longas, vídeos grandes ou uso público contínuo, o Render gratuito pode falhar por memória, espaço e limites de duração. Arquivos de trabalho são efêmeros e expiram; o servidor ainda não possui autenticação nem rate limiting por usuário — não divulgue como serviço público sem endurecimento.
+## Publicar a interface no Netlify
 
-Para testar: escolha um MP4 pequeno (< 30 MB) com voz e marque **1 corte**. O download de mídia em origem externa não será usado; o processamento depende de FFmpeg e Faster-Whisper.
+Se o site estiver conectado ao repositório GitHub `admpadangitamambuca-collab/dark-cut`, use a branch `main` e confirme que a pasta de publicação é `site` (o `netlify.toml` já define isso). O upload deste código no GitHub **não comprova** que o site Netlify atual foi publicado.
 
-O código do processamento de transcrição/cortes é a mesma base anterior; não há garantia de processamento real antes do primeiro teste no Render.
+Para publicação manual via Netlify Drop, use o arquivo **DarkCut_AI_v3_SITE_NETLIFY.zip** incluído na entrega; os arquivos `index.html`, `app.js`, `styles.css` e `config.js` estão na raiz desse pacote. Extraia o ZIP e arraste a pasta extraída para o Netlify Drop, caso o painel não aceite ZIP.
 
-# DarkCut AI 2.2 — Creative Studio
+O `site/config.js` contém somente a URL pública do worker: `https://darkcut-ai-worker-nbs4.onrender.com`. Você pode substituí-la ou editar o campo em **Configuração** no site. **Nunca coloque uma chave de API no frontend.**
 
-Atualização visual e funcional do gerador de cortes. Interface em português brasileiro, pronta para hospedar no **Netlify**, mais um serviço de processamento separado em Python/FFmpeg.
+## Publicar o motor Python no Render
 
-**O que faz**
+Serviço já existente: **`darkcut-ai-worker-nbs4`** na workspace `Administrativo's workspace`.
 
-1. Recebe um link de vídeo do YouTube, live **arquivada** ou arquivo direto de vídeo público via HTTPS.
-2. Obtém o conteúdo via Cobalt (para YouTube) ou link direto de mídia, transcreve a fala com Faster-Whisper e identifica trechos interessantes usando texto e pontuação contextual.
-3. Exporta cada trecho em **vertical 720 × 1280** e **horizontal 1280 × 720**, ambos MP4; legendas automáticas opcionais.
-4. Cria **um título, hashtags e um resumo por corte**, fundamentados na transcrição do trecho. Com `OPENAI_API_KEY` configurada, esse material é criado por modelo de linguagem; sem chave, oferece sugestões **extrativas**, claramente identificadas na interface como tal.
-5. Mostra prévia dos dois formatos, abas independentes Título / Hashtags / Resumo, botões para copiar e download de cada MP4 ou ZIP total (incluindo JSON de metadados).
-6. **Não envia conteúdo ao YouTube** nem publica automaticamente.
+- Runtime: Docker; Dockerfile `worker/Dockerfile`; contexto `worker`.
+- Plano: gratuito, com limitações de CPU/RAM e armazenamento temporário.
+- Porta: variável `PORT` de Render; aplicativo escuta em `0.0.0.0`.
+- Saúde: `GET /api/health` indica `version: "3.0.0"`, `upload_only: true`.
+- CORS: `CORS_ORIGINS=https://reliable-seahorse-fe5df4.netlify.app`.
+- `MAX_CONCURRENT_JOBS=1`; `WHISPER_MODEL=tiny` para prototipagem.
+- `MAX_UPLOAD_BYTES` padrão: **500 MiB**. O front consulta esse valor na API de saúde.
+- `JOB_TTL_HOURS` padrão: **24**, desde que a instância não reinicie/hiberne.
 
-## Estrutura
+### Fluxo da API
 
-```
-site/index.html       Interface principal
-site/styles.css       Identidade visual profissional e responsiva
-site/app.js           Envio de jobs, progresso, resultados, tabs e copiar
-site/config.js        Endereço público do worker (NUNCA chave de IA)
-netlify.toml          Publica a pasta site no Netlify
-worker/app/main.py    API FastAPI + jobs + downloads
-worker/app/engine.py  Transcrição, ranking, IA, legendas e renders
-worker/app/cobalt.py  Download de vídeos YouTube via Cobalt autorizado
-worker/requirements.txt
-worker/Dockerfile
-worker/tests/         Testes unitários
-```
+1. `POST /api/uploads` com JSON: `filename`, `size`, `count`, `min_seconds`, `max_seconds`, `subtitles`. Devolve `id`, `upload_token`, `chunk_bytes`.
+2. `PUT /api/uploads/{id}/chunks/{i}` com `Content-Type: application/octet-stream`, `X-Upload-Token` e uma parte de até 4 MiB. As partes devem ser enviadas sequencialmente.
+3. `POST /api/uploads/{id}/finish` com o token. Inicia o trabalho.
+4. `GET /api/jobs/{id}` devolve o andamento e, depois, os cortes e metadados.
+5. `GET /api/jobs/{id}/files/{nome}` baixa os MP4, TXT e ZIP.
+6. `POST /api/uploads/{id}/cancel` permite cancelar um upload inacabado.
 
-## Por que são dois serviços?
+O endpoint antigo multipart `/api/upload-jobs` permanece **apenas por compatibilidade temporária** com sites antigos. O antigo processamento de links (`POST /api/jobs`) retorna 410, porque o novo app é **arquivo-first**.
 
-O Netlify hospeda a parte estática e não é adequado para processar vídeos longos, transcrever e exportar vários MP4 em uma única função curta. O **worker precisa rodar em um servidor/container com CPU e FFmpeg**, por exemplo uma instância Cloud Run com CPU sempre alocada.
+## Textos gerados para cada corte
 
-O ZIP contém todo o código, porém **publicar somente o ZIP no Netlify não cria automaticamente o worker**. Para processar vídeos, configure ambos os serviços.
+O sistema transcreve usando Faster-Whisper e pontua janelas da fala para identificar possíveis momentos de interesse. Ele **não garante** que sejam os melhores trechos em todo tipo de vídeo. Em vídeos sem fala inteligível, a análise pode falhar.
 
-## Testar em computador local
+- **Sem** `OPENAI_API_KEY`, os títulos, descrições, legendas e hashtags são **sugestões extrativas**, produzidas com base na transcrição, identificadas claramente no site. Não são textos de um LLM externo.
+- **Com** `OPENAI_API_KEY` configurada **somente no Render**, o sistema solicita uma proposta para cada corte via API compatível. Isso pode gerar custos de uso e não está ativado por padrão. Se a API externa falhar, retorna ao texto extrativo.
 
-Requer Python 3.11+, FFmpeg e FFprobe no `PATH`, além de internet para instalar pacotes, baixar modelos e acessar vídeos.
+Legendas automáticas **dentro do vídeo** são opcionais e diferentes da **legenda de publicação** exibida em aba própria.
 
-```sh
+## Executar testes locais
+
+Requisitos: Python 3.11+, FFmpeg (com `ffprobe` e suporte a `libx264`/legendas), internet para baixar o modelo Whisper na primeira transcrição.
+
+```bash
 cd worker
 python -m venv .venv
-# Ative o ambiente virtual conforme o sistema operacional
+# Ativar ambiente virtual
 pip install -r requirements.txt
+pip install pytest httpx
+pytest -q
 uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-Em outro terminal, na raiz do projeto:
+Em outro terminal, da raiz do projeto:
 
-```sh
+```bash
 python -m http.server 8888 --directory site
 ```
 
-Abra `http://localhost:8888`, vá em **Configuração** e salve `http://localhost:8080`. O primeiro uso da transcrição baixa o modelo Whisper configurado (padrão `base`).
+Abra http://localhost:8888 e, em **Configuração**, selecione http://localhost:8080 para testar localmente.
 
-## Implantar o worker no Cloud Run (exemplo)
+## Limitações e segurança importantes
 
-1. Tenha uma conta e um projeto Google Cloud com faturamento, Cloud Run, Artifact Registry e Cloud Build habilitados. **Cloud Run não é garantidamente gratuito**.
-2. A partir da pasta `worker`, construa e implante a imagem Docker. Exemplo ilustrativo com Google Cloud CLI:
+- O **Render gratuito** pode entrar em suspensão após inatividade; vídeos e cortes ficam em armazenamento **efêmero** e desaparecem se o serviço reiniciar, hibernar ou for republicado. Baixe os resultados logo após o processamento.
+- Limite por arquivo: 500 MiB (configurável). Limite de tamanho não garante que o servidor gratuito tenha memória, CPU e disco para vídeos longos. O arquivo completo e os dois cortes gerados compartilham espaço temporário durante o processamento.
+- O upload em blocos reduz o tamanho das requisições, mas **não** transforma o Render gratuito em infraestrutura para arquivos ilimitados. Uploads não são retomados após reinício; o navegador pode precisar reenvialos.
+- A API atualmente não exige login para criar trabalhos. O token de upload protege etapas de um trabalho, **mas não equivale à autenticação do usuário**. Não anuncie o serviço como plataforma pública de uso irrestrito sem autenticação, cotas, rate limiting, armazenamento durável e uma fila de trabalho.
+- Só envie conteúdo que você tenha direito de utilizar. Nenhuma plataforma externa recebe publicações automaticamente.
 
-```sh
-# Execute na pasta worker e substitua o projeto e a região.
-gcloud run deploy darkcut-worker \
-  --source . \
-  --project SEU_PROJETO \
-  --region southamerica-east1 \
-  --allow-unauthenticated \
-  --cpu 2 --memory 4Gi \
-  --min-instances 1 --max-instances 1 \
-  --no-cpu-throttling \
-  --timeout 3600 \
-  --set-env-vars CORS_ORIGINS=https://SEU-SITE.netlify.app,WHISPER_MODEL=base
-```
+## Versão
 
-3. Adicione `OPENAI_API_KEY` como **segredo** do Cloud Run (Secret Manager), sem colocá-la em `site/config.js`, GitHub ou arquivos públicos. Configure o modelo via `OPENAI_MODEL` se desejado. Dependendo da conta/versão do Cloud Run, pode ser necessário ajustar a sintaxe de `--no-cpu-throttling`.
-4. Copie o endereço público HTTPS retornado pelo Cloud Run.
-5. Publique a pasta `site` no Netlify (ou a raiz deste projeto, que já contém `netlify.toml`). No Netlify, configure `site/config.js` com `workerUrl: "https://SEU-WORKER..."` **ou** abra a tela Configuração para salvar a URL no seu navegador.
-6. Certifique-se de que `CORS_ORIGINS` contenha **exatamente a origem HTTPS do seu site Netlify**. Teste `/api/health` no worker.
-
-### Variáveis úteis no worker
-
-| Nome | Padrão | Uso |
-|---|---|---|
-| `OPENAI_API_KEY` | vazio | Ativa metadados gerados por IA (servidor somente) |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Modelo do endpoint de chat |
-| `OPENAI_CHAT_URL` | API da OpenAI | Endpoint compatível opcional |
-| `WHISPER_MODEL` | `base` | Modelo de reconhecimento de fala no CPU |
-| `CORS_ORIGINS` | localhost:8888/8000 | Origens exatas permitidas, separadas por vírgula |
-| `MAX_CONCURRENT_JOBS` | `1` | Processamentos simultâneos |
-| `MAX_SOURCE_BYTES` | `1073741824` | Limite de tamanho da origem, em bytes |
-| `MAX_SOURCE_SECONDS` | `10800` | Duração máxima aceita da origem |
-| `JOB_TTL_HOURS` | `24` | Tempo até limpeza de diretórios antigos |
-| `DATA_DIR` | `/tmp/darkcut-jobs` | Pasta de jobs e vídeos |
-
-## Limitações técnicas, testes e melhorias de produção
-
-- **Não foi possível executar um vídeo do YouTube real neste ambiente**, nem instalar/rodar Faster-Whisper nesta sessão. A integração YouTube/Whisper/IA deverá ser validada com internet e segredos adequados no worker após deploy. Uma instância Cobalt própria ou autorizada é necessária para links do YouTube; vídeos com DRM, login ou transmissões ainda em andamento podem não funcionar.
-- O algoritmo atual seleciona candidatos por **pistas textuais e transcrição**, não por um modelo treinado para prever viralização. Não há garantia de que os trechos serão os melhores em todos os casos. O enquadramento vertical é centralizado; ainda não usa rastreamento automático de rostos.
-- Sem chave configurada, o sistema **não finge** usar uma IA de linguagem para títulos, resumos e hashtags: a interface exibe *Sugestão baseada na transcrição*.
-- Os jobs rodam em thread dentro do mesmo processo; os arquivos são guardados no disco local efêmero do contêiner. O modo `min-instances=1` e CPU sempre alocada é uma **configuração de protótipo**. Para serviço público/alta escala, implemente fila durável, armazenamento de objetos, autenticação, controle de custos, reintentos, antivírus, limpeza periódica e proteção contra abuso. Reinicializações da instância podem perder jobs.
-- **Segurança:** o worker é público no exemplo, aceita somente origens de navegador autorizadas para CORS, mas CORS sozinho **não autentica** clientes. Um endpoint público com mídia e inferência pode gerar custos. Antes de abrir para terceiros, adicione autenticação, rate limiting, uma fila e validação reforçada de hosts/redirecionamentos contra SSRF.
-- Use vídeos próprios ou para os quais possua os direitos e permissões necessários.
-
-## Verificações locais realizadas
-
-- Oito testes automatizados do motor e da API: metadados extrativos, temporização SRT, escrita de legendas, recorte não sobreposto, bloqueio de link inseguro e link do YouTube.
-- Código Python compilado; JavaScript passou `node --check`.
-- Exportação real pelo FFmpeg testada com vídeo sintético e legenda, confirmando **720×1280** e **1280×720**.
-
-**Versão:** 2.2 (reconstrução da especificação v2.1 + novas abas e design; não é patch binário do ZIP v2.1 porque o arquivo anterior não estava acessível nesta sessão).
-
-## Motor de download Cobalt (sem yt-dlp)
-
-O único mecanismo de obtenção de vídeos do YouTube é o **Cobalt**, configurável via `COBALT_API_URL` e `COBALT_API_KEY` no servidor. A instância deve ser própria ou autorizada; serviços Cobalt públicos não autorizam por padrão o uso automatizado por outros produtos. Consulte [COBALT_SETUP.md](COBALT_SETUP.md). O Cobalt não garante eliminar bloqueios do YouTube e a versão gratuita do Render possui recursos limitados.
+**3.0.0** — Novo aplicativo de upload de arquivo completo, sem dependências de download de YouTube; 4 abas por corte; envio em partes; ZIP com vídeo e kit de publicação.

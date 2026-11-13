@@ -21,8 +21,8 @@
       <a href="#setup" class="menu-link" data-nav="setup"><span class="nav-icon">⚙</span> Configuração</a>
     </div>
     <div class="sidebar-bottom">
-      <div class="side-tip"><span class="tip-star">✦</span><strong>Do link ao corte.</strong><p>Encontre os melhores momentos e receba dois formatos de vídeo.</p></div>
-      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v2.2</span></div>
+      <div class="side-tip"><span class="tip-star">✦</span><strong>Do arquivo ao corte.</strong><p>Envie um vídeo inteiro. Receba cortes e textos prontos para publicar.</p></div>
+      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v3.0</span></div>
     </div>
   </aside>
 
@@ -32,52 +32,56 @@
       <div class="hero">
         <div class="hero-copy"><div class="eyebrow"><span class="eyebrow-mark">✦</span> EDIÇÃO INTELIGENTE <span class="eyebrow-line"></span> DARKCUT STUDIO</div>
           <h1>Seus melhores <em>momentos,</em><br>prontos para destacar.</h1>
-          <p>Envie um MP4 salvo pelo Snaptube ou cole um link. Identifique trechos relevantes, gere cortes e receba títulos, hashtags e resumos personalizados.</p>
-          <div class="hero-chips"><span><i>✓</i> Cortes automáticos</span><span><i>✓</i> Vertical + horizontal</span><span><i>✓</i> Metadados por IA</span></div>
+          <p>Envie o vídeo completo do seu aparelho. O estúdio identifica trechos de destaque, monta Shorts e cortes tradicionais e prepara os textos para publicação.</p>
+          <div class="hero-chips"><span><i>✓</i> Cortes automáticos</span><span><i>✓</i> Vertical + horizontal</span><span><i>✓</i> Publicações prontas para copiar</span></div>
         </div>
         <div class="hero-art" aria-hidden="true"><div class="art-glow"></div><div class="art-card art-card-back"><span class="art-play">▶</span><span class="art-wave"></span></div><div class="art-card art-card-front"><span class="art-lines"><i></i><i></i><i></i></span><span class="art-dot"></span></div><div class="art-label">✦ AI HIGHLIGHTS</div><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div></div>
       </div>
 
       <div class="studio-grid">
         <section class="panel create-panel" aria-labelledby="create-title">
-          <div class="panel-heading"><div><div class="card-kicker">01 / INICIAR CRIAÇÃO</div><h2 id="create-title">Criar novos cortes</h2><p>Adicione o conteúdo de origem para começar.</p></div><span class="heading-icon">✦</span></div>
+          <div class="panel-heading"><div><div class="card-kicker">01 / INICIAR CRIAÇÃO</div><h2 id="create-title">Criar novos cortes</h2><p>Selecione o vídeo completo e escolha como deseja os cortes.</p></div><span class="heading-icon">✦</span></div>
           <form id="create-form">
-            <div class="source-switch" role="tablist" aria-label="Escolha a origem do vídeo">
-              <button type="button" id="mode-file" class="source-option is-active" role="tab" aria-selected="true" aria-controls="source-file-panel">⇧ Enviar MP4</button>
-              <button type="button" id="mode-link" class="source-option" role="tab" aria-selected="false" aria-controls="source-link-panel">↗ Colar link</button>
-            </div>
-            <div id="source-file-panel" role="tabpanel" aria-labelledby="mode-file">
-              <label class="field-label" for="video-file">VÍDEO SALVO NO SEU APARELHO</label>
-              <div class="upload-zone"><span class="upload-icon" aria-hidden="true">⇧</span><div class="upload-zone-content"><strong>Escolha um arquivo MP4</strong><span>Do Snaptube, da galeria ou da pasta Downloads</span></div><input id="video-file" type="file" accept=".mp4,video/mp4" required></div>
-              <p id="upload-file-details" class="helper" aria-live="polite">Limite de 150 MB por arquivo nesta versão de testes. Use vídeos que você pode editar.</p>
-            </div>
-            <div id="source-link-panel" role="tabpanel" aria-labelledby="mode-link" hidden>
-              <label class="field-label" for="video-url">LINK DO VÍDEO OU LIVE</label>
-              <div class="url-wrap"><span class="url-icon">↗</span><input id="video-url" type="url" autocomplete="url" placeholder="https://www.youtube.com/watch?v=..." aria-describedby="url-help"><span class="url-tag">HTTPS</span></div>
-              <p id="url-help" class="helper">Links diretos para arquivos funcionam melhor. O acesso ao YouTube pelo servidor pode ser bloqueado.</p>
+            <div class="source-heading"><span class="source-icon">⇧</span><div><strong>Envie o vídeo completo</strong><small>Da galeria, Downloads ou computador • Somente arquivos MP4</small></div></div>
+            <label for="video-file" class="upload-zone" id="upload-zone">
+              <span class="upload-icon" aria-hidden="true">⇧</span>
+              <span class="upload-zone-content"><strong>Escolher vídeo ou arrastar para cá</strong><span>MP4 • Envio em partes para arquivos maiores</span></span>
+              <input id="video-file" type="file" accept=".mp4,video/mp4" required aria-describedby="upload-file-details">
+            </label>
+            <p id="upload-file-details" class="helper" aria-live="polite">Limite inicial de 500 MB por vídeo. O servidor gratuito pode ter restrições para vídeos longos.</p>
+            <div id="file-preview" class="file-preview" hidden>
+              <video id="original-preview" controls preload="metadata" playsinline></video>
+              <div class="file-preview-info"><strong id="file-preview-name"></strong><span id="file-preview-data"></span></div>
             </div>
             <div class="field-divider"></div>
-            <div class="options-heading"><strong>Preferências de edição</strong><span>PERSONALIZE SUA ENTREGA</span></div>
-            <div class="field-columns"><div class="field-group"><label class="field-label" for="clip-count">QUANTIDADE DE CORTES</label><div class="select-shell"><select id="clip-count"><option value="2">2 cortes</option><option value="3" selected>3 cortes</option><option value="4">4 cortes</option><option value="5">5 cortes</option><option value="6">6 cortes</option><option value="8">8 cortes</option></select><span>⌄</span></div></div><div class="field-group"><label class="field-label" for="clip-length">DURAÇÃO POR CORTE</label><div class="select-shell"><select id="clip-length"><option value="15,35">15–35 segundos</option><option value="25,65" selected>25–65 segundos</option><option value="45,90">45–90 segundos</option></select><span>⌄</span></div></div></div>
-            <div class="subtitles-row"><div class="subtitles-symbol">▤</div><div class="subtitles-desc"><strong>Legendas no vídeo</strong><span>Incluir legendas automáticas nos dois formatos</span></div><label class="switch"><input id="include-subtitles" type="checkbox" checked><span class="switch-track"></span><span class="sr-only">Habilitar legendas</span></label></div>
+            <div class="options-heading"><strong>Configurar a criação</strong><span>FORMATO E QUANTIDADE</span></div>
+            <div class="field-columns">
+              <div class="field-group"><label class="field-label" for="clip-count">QUANTIDADE DE CORTES</label><div class="select-shell"><select id="clip-count"><option value="1">1 corte</option><option value="2">2 cortes</option><option value="3" selected>3 cortes</option><option value="4">4 cortes</option><option value="5">5 cortes</option><option value="6">6 cortes</option><option value="8">8 cortes</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="clip-length">DURAÇÃO DOS TRECHOS</label><div class="select-shell"><select id="clip-length"><option value="15,35">15–35 segundos</option><option value="25,60" selected>25–60 segundos</option><option value="45,90">45–90 segundos</option><option value="60,120">60–120 segundos</option></select><span>⌄</span></div></div>
+            </div>
+            <div class="export-types" aria-label="Formatos que serão entregues">
+              <div class="export-type"><span class="format-glyph">▯</span><div><strong>Shorts</strong><small>Vertical 9:16 · 720 × 1280</small></div><span class="format-ready">✓</span></div>
+              <div class="export-type"><span class="format-glyph">▭</span><div><strong>Corte tradicional</strong><small>Horizontal 16:9 · 1280 × 720</small></div><span class="format-ready">✓</span></div>
+            </div>
+            <div class="subtitles-row"><div class="subtitles-symbol">▤</div><div class="subtitles-desc"><strong>Legendas automáticas no vídeo</strong><span>Transcrever o áudio e incluir legendas nos dois formatos</span></div><label class="switch"><input id="include-subtitles" type="checkbox" checked><span class="switch-track"></span><span class="sr-only">Habilitar legendas</span></label></div>
             <div id="form-error" role="alert" class="error-message" hidden></div>
-            <button class="primary-btn" id="generate-btn" type="submit"><span class="btn-star">✦</span><span id="generate-label">Gerar cortes com IA</span><span class="btn-arrow">↗</span></button>
-            <p class="footer-note">Seu conteúdo não será publicado automaticamente em nenhuma plataforma.</p>
+            <button class="primary-btn" id="generate-btn" type="submit"><span class="btn-star">✦</span><span id="generate-label">Analisar vídeo e gerar cortes</span><span class="btn-arrow">↗</span></button>
+            <p class="footer-note">Nenhum vídeo é publicado automaticamente. Utilize apenas arquivos que tenha autorização para editar.</p>
           </form>
         </section>
-        <aside class="right-column"><div class="panel insight-panel"><div class="insight-top"><span class="insight-icon">◉</span><span class="insight-pill">WORKFLOW</span></div><h3>Do conteúdo à publicação, com menos trabalho.</h3><div class="workflow-steps"><div><span>01</span><p><strong>Detectar</strong><small>Transcrição e seleção de trechos relevantes</small></p></div><div><span>02</span><p><strong>Editar</strong><small>Vídeos em 9:16 e 16:9, com legendas opcionais</small></p></div><div><span>03</span><p><strong>Preparar</strong><small>Título, hashtags e resumo para copiar</small></p></div></div></div>
-          <div class="mini-panel"><div class="mini-panel-icon">⇩</div><div><strong>Arquivos sob seu controle</strong><p>Baixe em MP4 ou todos os cortes em um ZIP. Nada é enviado ao YouTube por nós.</p></div></div>
+        <aside class="right-column"><div class="panel insight-panel"><div class="insight-top"><span class="insight-icon">◉</span><span class="insight-pill">WORKFLOW</span></div><h3>Do vídeo completo à publicação, em um fluxo.</h3><div class="workflow-steps"><div><span>01</span><p><strong>Detectar</strong><small>O motor analisa a fala e seleciona trechos com potencial</small></p></div><div><span>02</span><p><strong>Editar</strong><small>Shorts 9:16 + cortes tradicionais 16:9</small></p></div><div><span>03</span><p><strong>Preparar</strong><small>Título, descrição, legenda de postagem e hashtags por corte</small></p></div></div></div>
+          <div class="mini-panel"><div class="mini-panel-icon">⇩</div><div><strong>Arquivos sob seu controle</strong><p>Baixe MP4, textos separados e o ZIP completo. A publicação é sempre manual.</p></div></div>
         </aside>
       </div>
 
-      <section id="progress-panel" class="panel progress-panel" hidden aria-live="polite"><div class="progress-upper"><div><div class="card-kicker">02 / PROCESSAMENTO</div><h2>Preparando seus cortes</h2><p id="job-stage">Aguardando processamento…</p></div><div class="progress-number" id="progress-number">0%</div></div><div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div><p class="progress-foot">Aguarde nesta página até a conclusão. Para processamentos longos, o servidor precisa permanecer ativo.</p></section>
+      <section id="progress-panel" class="panel progress-panel" hidden aria-live="polite"><div class="progress-upper"><div><div class="card-kicker">02 / PROCESSAMENTO</div><h2>Preparando seus cortes</h2><p id="job-stage">Aguardando processamento…</p></div><div class="progress-number" id="progress-number">0%</div></div><div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div><p class="progress-foot">O upload tem progresso independente. Depois disso, o servidor processa e prepara cada corte e seus textos.</p></section>
 
       <section id="results" class="results-section" aria-labelledby="results-title">
         <div class="results-heading"><div><div class="card-kicker">03 / RESULTADOS</div><h2 id="results-title">Seus cortes <span id="results-count"></span></h2><p id="results-desc">Quando seus cortes estiverem prontos, eles aparecerão aqui para prévia e download.</p></div><button id="download-all" class="secondary-btn" type="button" hidden>⇩ Baixar todos em ZIP</button></div>
-        <div id="results-empty" class="results-empty"><div class="empty-graphic"><span>▣</span><i>✦</i></div><strong>Seu próximo conteúdo começa aqui</strong><p>Envie um arquivo MP4 acima para gerar os melhores trechos e preparar sua publicação.</p></div>
+        <div id="results-empty" class="results-empty"><div class="empty-graphic"><span>▣</span><i>✦</i></div><strong>Seu próximo conteúdo começa aqui</strong><p>Escolha um arquivo MP4 e o DarkCut AI preparará os melhores momentos, os dois formatos e os textos da publicação.</p></div>
         <div id="clip-list" class="clip-list" aria-live="polite"></div>
       </section>
-      <section id="setup" class="setup-section panel"><div><div class="card-kicker">CONFIGURAÇÃO / MOTOR DE VÍDEO</div><h2>Conexão com o processador</h2><p>O Netlify hospeda o estúdio. Um serviço Python independente processa vídeos e gera os metadados. Configure apenas o endereço HTTPS dele.</p></div><div class="setup-form"><label for="worker-url" class="field-label">URL DO WORKER</label><div class="setup-input-row"><input type="url" id="worker-url" placeholder="https://seu-worker.run.app"><button id="save-worker" type="button" class="secondary-btn">Salvar conexão</button></div><p id="worker-feedback" class="setup-feedback">Nenhuma chave de IA deve ser inserida aqui; configure-a exclusivamente no ambiente privado do servidor.</p></div></section>
+      <section id="setup" class="setup-section panel"><div><div class="card-kicker">CONFIGURAÇÃO / MOTOR DE VÍDEO</div><h2>Conexão com o processador</h2><p>O Netlify hospeda esta interface. O motor no Render recebe os arquivos, processa os vídeos e entrega os cortes. Configure apenas a URL HTTPS do motor.</p></div><div class="setup-form"><label for="worker-url" class="field-label">URL DO WORKER</label><div class="setup-input-row"><input type="url" id="worker-url" placeholder="https://seu-worker.run.app"><button id="save-worker" type="button" class="secondary-btn">Salvar conexão</button></div><p id="worker-feedback" class="setup-feedback">Nenhuma chave de IA deve ser inserida aqui; configure-a exclusivamente no ambiente privado do servidor.</p></div></section>
       <footer class="site-footer"><span>DARKCUT AI <b>®</b> CREATIVE STUDIO</span><span>Crie mais. Publique quando quiser.</span></footer>
     </div>
   </main>

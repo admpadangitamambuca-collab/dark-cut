@@ -5,13 +5,10 @@ When unavailable, metadata is transparently marked as an extractive suggestion.
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import re
-import socket
 import subprocess
-import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -32,39 +29,12 @@ STOPWORDS = {
 }
 
 
-def validate_source_url(raw: str) -> str:
-    """Basic URL and public-host checks; only youtube or directly linked videos."""
-    parsed = urllib.parse.urlparse(raw.strip())
-    host = (parsed.hostname or "").lower().rstrip(".")
-    if parsed.scheme != "https" or not host or parsed.username or parsed.password:
-        raise ValueError("Use um endereço HTTPS válido do YouTube ou um link direto .mp4.")
-    is_yt = host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be", "music.youtube.com"}
-    is_video = parsed.path.lower().endswith((".mp4", ".mov", ".webm", ".m4v"))
-    if not (is_yt or is_video):
-        raise ValueError("Por segurança, são aceitos links do YouTube ou arquivos HTTPS diretos .mp4/.mov/.webm/.m4v.")
-    if not is_yt:
-        try:
-            answers = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-        except socket.gaierror as e:
-            raise ValueError("O domínio do vídeo não pôde ser resolvido.") from e
-        if not answers or any(not ipaddress.ip_address(a[4][0]).is_global for a in answers):
-            raise ValueError("O vídeo deve estar em um servidor público, não em uma rede privada.")
-    return raw.strip()
-
-
 def run_command(args: list[str], timeout: int = 1200) -> None:
     cp = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
     if cp.returncode:
         raise RuntimeError((cp.stderr or cp.stdout)[-1300:] or "O comando de vídeo falhou.")
 
 
-
-
-def download_source(url: str, folder: Path, progress: Callable[[int, str], None]) -> Path:
-    """Acquire YouTube media exclusively through an authorized Cobalt instance."""
-    from .cobalt import download_source as cobalt_download
-    progress(9, "Solicitando o vídeo ao Cobalt")
-    return cobalt_download(url, folder)
 
 
 def inspect_duration(source: Path) -> float:
@@ -148,22 +118,27 @@ def extract_keywords(text: str, maximum: int = 8) -> list[str]:
 
 
 def extractive_metadata(text: str, index: int) -> dict:
+    """Transparent metadata drafts based strictly on words from the selected excerpt."""
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text.strip()) if len(p.strip()) > 12]
     if not parts:
         parts = [text.strip()]
     title = re.sub(r"\s+", " ", parts[0]).strip(" .!?:,-")[:82] or f"Destaque do vídeo #{index}"
-    if len(title) > 70:
-        title = title[:67].rstrip() + "…"
-    summary = " ".join(parts[:3])[:430].strip()
+    if len(title) > 78:
+        title = title[:75].rstrip() + "…"
+    description = " ".join(parts[:3])[:580].strip()
+    if not description:
+        description = title
     tags = ["#Cortes", "#MelhoresMomentos"] + ["#" + w.capitalize() for w in extract_keywords(text)[:7]]
-    return {"title": title, "summary": summary, "hashtags": tags, "metadata_source": "extrativo"}
+    # A social-post caption is distinct from a descriptive video synopsis.
+    caption = f"{title}.\n\n{description}\n\nQual sua opinião sobre esse trecho?"
+    return {
+        "title": title, "description": description, "caption": caption,
+        "summary": description, "hashtags": tags, "metadata_source": "extrativo",
+    }
 
 
 def ai_metadata(text: str, index: int) -> dict:
-    """Generate per-clip metadata using a configurable OpenAI-compatible chat endpoint.
-
-    The actual text is the sole factual source. The API key never reaches the browser.
-    """
+    """Optional LLM drafting; no external key means an honest extractive fallback."""
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
         return extractive_metadata(text, index)
@@ -174,12 +149,13 @@ def ai_metadata(text: str, index: int) -> dict:
         "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": (
-                "Você é editor de cortes para YouTube em português brasileiro. "
-                "Crie UM título atrativo e fiel ao conteúdo, até 85 caracteres; "
-                "UM resumo objetivo com 2 a 3 frases; "
-                "e 6 a 10 hashtags relevantes. "
-                "Não acrescente fatos, nomes, números ou promessas ausentes do trecho. "
-                "Retorne JSON com chaves: title (string), summary (string), hashtags (array de strings)."
+                "Você é editor de vídeos e cortes para redes sociais em português brasileiro. "
+                "Para UM trecho, escreva título chamativo fiel ao texto (até 85 caracteres); "
+                "descrição do conteúdo do corte em 2 ou 3 frases (até 600 caracteres); "
+                "legenda pronta para publicação, envolvente e natural, com chamada para interação (até 700 caracteres); "
+                "e de 5 a 10 hashtags relevantes. Não invente fatos, números, pessoas, contexto ou promessas. "
+                "Responda APENAS JSON com title (string), description (string), caption (string), "
+                "hashtags (array de strings)."
             )},
             {"role": "user", "content": "Transcrição deste corte:\n" + text[:9000]},
         ],
@@ -188,10 +164,13 @@ def ai_metadata(text: str, index: int) -> dict:
         req = urllib.request.Request(endpoint, data=json.dumps(body).encode(), headers={
             "Content-Type": "application/json", "Authorization": f"Bearer {key}"}, method="POST")
         with urllib.request.urlopen(req, timeout=55) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(512 * 1024))
         result = json.loads(data["choices"][0]["message"]["content"])
-        title, summary, tags = str(result["title"]).strip()[:85], str(result["summary"]).strip()[:600], result["hashtags"]
-        if not title or not summary or not isinstance(tags, list):
+        title = result.get("title")
+        desc = result.get("description")
+        caption = result.get("caption")
+        tags = result.get("hashtags")
+        if not all(isinstance(value, str) and value.strip() for value in (title, desc, caption)) or not isinstance(tags, list):
             raise ValueError("Metadados da IA incompletos")
         hashtags = []
         for t in tags[:12]:
@@ -200,11 +179,13 @@ def ai_metadata(text: str, index: int) -> dict:
                 hashtags.append("#" + slug)
         if len(hashtags) < 3:
             raise ValueError("A IA retornou poucas hashtags")
-        return {"title": title, "summary": summary, "hashtags": hashtags, "metadata_source": "ia"}
+        return {
+            "title": title.strip()[:85], "description": desc.strip()[:600],
+            "summary": desc.strip()[:600], "caption": caption.strip()[:700],
+            "hashtags": hashtags, "metadata_source": "ia",
+        }
     except Exception:
-        # No false indication of an AI-generated title if the model was unavailable.
         return extractive_metadata(text, index)
-
 
 def srt_timestamp(seconds: float) -> str:
     millis = round(max(0, seconds) * 1000)
