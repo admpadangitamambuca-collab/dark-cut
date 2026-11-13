@@ -20,6 +20,8 @@
   let currentJob = null;
   let maxUploadBytes = 500 * 1048576;
   let timer = null;
+  const resumedJobs = new Set();
+  const connectionFailures = new Map();
   const view = {};
   const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const clock = (seconds) => {
@@ -193,6 +195,7 @@
     if (currentJob !== jobId) return;
     try {
       const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+      connectionFailures.delete(jobId);
       if (currentJob !== jobId) return;
       showProgress(job.progress, job.message);
       if (job.clips?.length) renderResults(job);
@@ -206,6 +209,18 @@
         $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
+      if (job.status === 'interrupted') {
+        if (job.can_resume && !resumedJobs.has(jobId)) {
+          resumedJobs.add(jobId);
+          showProgress(job.progress || 24, 'Recuperando o processamento após reinicialização do servidor…');
+          await api(`/api/jobs/${encodeURIComponent(jobId)}/resume`, { method: 'POST' });
+          timer = setTimeout(() => poll(jobId), 4000);
+          return;
+        }
+        busy(false);
+        setError(job.message || 'O trabalho foi interrompido pelo servidor.');
+        return;
+      }
       if (job.status === 'failed') {
         busy(false);
         setError(job.message || 'O processamento do vídeo falhou.');
@@ -214,8 +229,16 @@
       }
       timer = setTimeout(() => poll(jobId), 3000);
     } catch (error) {
+      const n = (connectionFailures.get(jobId) || 0) + 1;
+      connectionFailures.set(jobId, n);
+      if (n <= 12 && currentJob === jobId) {
+        els.stage.textContent = `Servidor indisponível, tentando reconectar (${n}/12)…`;
+        timer = setTimeout(() => poll(jobId), 5000);
+        return;
+      }
       busy(false);
-      setError(error.message + ' Os arquivos no plano gratuito podem expirar após reinicialização do servidor.');
+      setError(error.message + ' O servidor pode ter reiniciado por falta de memória. ' +
+        'Sem armazenamento externo configurado, os trabalhos em andamento não podem ser recuperados.');
       els.stage.textContent = 'Conexão com o motor interrompida';
     }
   }

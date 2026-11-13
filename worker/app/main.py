@@ -21,10 +21,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from .engine import ai_metadata, inspect_duration, render_clip, select_clips, transcribe, transcription_backend_ready, write_srt
+from . import storage
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ LOCK = threading.Lock()
 ACTIVE: set[str] = set()
 UPLOADS: dict[str, dict] = {}
 
-app = FastAPI(title="DarkCut AI — File Studio", version="3.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="DarkCut AI — File Studio", version="3.1.0", docs_url=None, redoc_url=None)
 allowed = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:8888,http://localhost:8000").split(",") if s.strip()]
 app.add_middleware(
     CORSMiddleware, allow_origins=allowed, allow_credentials=False,
@@ -73,7 +74,21 @@ def snapshot(job_id: str) -> dict:
         raise HTTPException(404, "Projeto inválido.")
     p = ROOT / job_id / "status.json"
     if not p.is_file():
-        raise HTTPException(404, "Projeto não encontrado ou expirado no servidor.")
+        if storage.enabled():
+            try:
+                restored = storage.get_state(job_id)
+            except Exception:
+                logger.exception("Persistent status recovery failed for job %s", job_id)
+                raise HTTPException(503, "Armazenamento indisponível. Tente novamente.")
+            if restored:
+                if restored.get("status") in ("processing", "uploading") and job_id not in ACTIVE:
+                    restored = {
+                        **restored, "status": "interrupted", "can_resume": bool(restored.get("settings")),
+                        "message": "O servidor reiniciou. O vídeo foi preservado e pode ser reprocessado.",
+                    }
+                return restored
+        raise HTTPException(404, "Projeto temporário perdido após reinicialização do servidor. "
+                                  "Para evitar isso, configure armazenamento R2 no worker.")
     return json.loads(p.read_text(encoding="utf-8"))
 
 
@@ -122,7 +137,7 @@ def reserve_job(message: str = "Preparando o vídeo", uploading: bool = False) -
     return job_id
 
 
-def do_job(job_id: str, settings: JobSettings, uploaded_source: Path) -> None:
+def do_job(job_id: str, settings: JobSettings, uploaded_source: Path, backed_up: bool = False) -> None:
     directory = ROOT / job_id
     state = snapshot(job_id)
 
@@ -131,7 +146,17 @@ def do_job(job_id: str, settings: JobSettings, uploaded_source: Path) -> None:
         save(job_id, state)
 
     try:
-        progress(25, "Analisando o arquivo de vídeo")
+        if not uploaded_source.is_file():
+            if not storage.enabled():
+                raise RuntimeError("O vídeo não está disponível para continuar o processamento.")
+            progress(24, "Restaurando vídeo do armazenamento persistente")
+            storage.fetch_file(job_id, "original.mp4", uploaded_source)
+        if storage.enabled() and not backed_up:
+            progress(25, "Preservando vídeo no armazenamento externo")
+            storage.put_file(job_id, uploaded_source)
+            state["settings"] = settings.model_dump()
+            storage.put_state(job_id, state)
+        progress(26, "Analisando o arquivo de vídeo")
         duration = inspect_duration(uploaded_source)
         segments = transcribe(uploaded_source, progress)
         progress(47, "Identificando os melhores momentos a partir da transcrição")
@@ -168,6 +193,10 @@ def do_job(job_id: str, settings: JobSettings, uploaded_source: Path) -> None:
             exported.append(publication_filename)
             state["clips"].append(clip_record)
             save(job_id, state)
+            if storage.enabled():
+                for filename in (f"corte_{i:02d}_vertical.mp4", f"corte_{i:02d}_horizontal.mp4", publication_filename):
+                    storage.put_file(job_id, directory / filename)
+                storage.put_state(job_id, state)
         progress(95, "Preparando os arquivos para download")
         bundle_name = "DarkCut_cortes_e_publicacoes.zip"
         with zipfile.ZipFile(directory / bundle_name, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
@@ -180,10 +209,18 @@ def do_job(job_id: str, settings: JobSettings, uploaded_source: Path) -> None:
             "bundle_url": f"/api/jobs/{job_id}/files/{bundle_name}",
         })
         save(job_id, state)
+        if storage.enabled():
+            storage.put_file(job_id, directory / bundle_name)
+            storage.put_state(job_id, state)
     except Exception as exc:
         logger.exception("Video processing failed for job %s", job_id)
         state.update({"status": "failed", "progress": 0, "message": str(exc)[:650]})
         save(job_id, state)
+        if storage.enabled():
+            try:
+                storage.put_state(job_id, state)
+            except Exception:
+                logger.exception("Could not persist failed job state %s", job_id)
     finally:
         uploaded_source.unlink(missing_ok=True)
         with LOCK:
@@ -205,10 +242,11 @@ def _upload_state(job_id: str, token: str) -> dict:
 @app.get("/api/health")
 def health():
     return {
-        "ok": True, "version": "3.0.0", "upload_only": True, "transcription_ready": transcription_backend_ready(),
+        "ok": True, "version": "3.1.0", "upload_only": True, "transcription_ready": transcription_backend_ready(),
         "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
         "transcription_model": os.getenv("WHISPER_MODEL", "tiny"),
         "max_upload_bytes": MAX_UPLOAD_BYTES, "chunk_bytes": CHUNK_BYTES,
+        "persistent_storage_enabled": storage.enabled(),
     }
 
 
@@ -359,6 +397,31 @@ def read_job(job_id: str):
     return snapshot(job_id)
 
 
+@app.post("/api/jobs/{job_id}/resume", status_code=202)
+def resume_job(job_id: str):
+    if not _job_id_valid(job_id) or not storage.enabled():
+        raise HTTPException(404, "Projeto não recuperável; armazenamento persistente não configurado.")
+    state = snapshot(job_id)
+    if state.get("status") not in ("interrupted", "failed") or not state.get("settings"):
+        raise HTTPException(409, "Este projeto não precisa ou não pode ser retomado.")
+    with LOCK:
+        if job_id in ACTIVE or len(ACTIVE) >= MAX_JOBS:
+            raise HTTPException(429, "O motor já está ocupado.")
+        ACTIVE.add(job_id)
+    try:
+        settings = JobSettings(**state["settings"])
+        # Only source from our private bucket. The async task restores it if needed.
+        source = ROOT / job_id / "original.mp4"
+        state.update(status="processing", progress=24, message="Recuperando vídeo arquivado")
+        save(job_id, state)
+        POOL.submit(do_job, job_id, settings, source, True)
+    except Exception:
+        with LOCK:
+            ACTIVE.discard(job_id)
+        raise
+    return state
+
+
 @app.get("/api/jobs/{job_id}/files/{filename}")
 def get_output(job_id: str, filename: str):
     allowed_file = (
@@ -373,6 +436,13 @@ def get_output(job_id: str, filename: str):
         raise HTTPException(404, "Arquivo indisponível.")
     path = ROOT / job_id / filename
     if not path.is_file():
-        raise HTTPException(404, "Arquivo indisponível.")
+        if storage.enabled():
+            try:
+                return RedirectResponse(storage.signed_download(job_id, filename), status_code=307,
+                                        headers={"Cache-Control": "private, no-store"})
+            except Exception:
+                logger.exception("Could not provide archived download for %s", job_id)
+                raise HTTPException(503, "O armazenamento externo não respondeu.")
+        raise HTTPException(404, "Arquivo temporário expirou. Configure armazenamento persistente para preservar downloads.")
     media_type = "video/mp4" if filename.endswith(".mp4") else "application/zip" if filename.endswith(".zip") else "text/plain"
     return FileResponse(path, media_type=media_type, filename=filename, headers={"Cache-Control": "private, no-store"})

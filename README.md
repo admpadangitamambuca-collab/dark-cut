@@ -109,3 +109,37 @@ A rota `/api/health` informa `transcription_ready`; um valor `true` confirma que
 (sem garantir que o modelo esteja baixado ou que o Render gratuito tenha RAM suficiente para transcrever vídeos longos).
 Falhas de importação e carregamento do modelo são registradas no Render com traceback,
 e o usuário recebe uma mensagem distinguindo biblioteca ausente e falha de inicialização do modelo.
+
+## v3.1 — Transcrição em janelas e armazenamento persistente opcional
+
+**Diagnóstico confirmado no Render:** o servidor Free de 512 MiB foi encerrado por excesso de memória (`oomKilled`) durante o processamento de um vídeo grande. O problema não era a origem do arquivo MP4 nem apenas a expiração do link.
+
+### Redução do consumo de RAM
+
+O worker agora extrai com FFmpeg pequenos trechos de áudio PCM (45 segundos por padrão, configurável entre 15 e 90 segundos) e os transcreve sequencialmente com `faster-whisper`, `beam_size=1`, `vad_filter=False` e CPU com uma thread. Isso evita carregar o áudio completo de um vídeo longo na memória. A exportação de MP4 também usa uma thread do codificador H.264. **Não garante que o Render Free seja suficiente:** a inferência e a renderização ainda podem ultrapassar 512 MiB ou demorar demais. Recomendamos ambiente com pelo menos 2 GB de RAM para vídeos longos.
+
+### Arquivos sem expiração após reiniciar — Cloudflare R2
+
+O suporte a **armazenamento R2 está implementado, mas permanece desativado até o proprietário conectar um bucket**. Os arquivos ficam em bucket privado, e o site usa links temporários assinados emitidos pelo servidor para baixar os objetos; os **objetos não expiram com o link**. Não há política de exclusão automática configurada pelo projeto. Se o bucket tiver regras de ciclo de vida, exclusão manual, limite de conta ou suspensão, os dados podem ser removidos.
+
+1. Em sua conta Cloudflare, habilite R2, crie um bucket *privado* na classe Standard (por exemplo `darkcut-arquivos`). Verifique os termos da conta e limites/cobrança.
+2. Gere uma chave de API R2 com permissão de leitura e gravação **restrita a esse bucket**.
+3. Em **Render → darkcut-ai-worker-nbs4 → Environment**, configure **somente no servidor** estas variáveis:
+
+   - `R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
+   - `R2_BUCKET=darkcut-arquivos`
+   - `R2_ACCESS_KEY_ID=<chave privada>`
+   - `R2_SECRET_ACCESS_KEY=<segredo privado>`
+
+4. Após implantação, abra `/api/health` no worker e confira `persistent_storage_enabled: true`.
+5. Ao processar um vídeo, o servidor primeiro copia o MP4 original para o bucket e guarda os cortes, textos, ZIP e estado do projeto depois de gerados. Depois de um reinício, o status e downloads podem ser recuperados do R2. O site tentará retomar uma análise interrompida **uma única vez**, quando o vídeo original já tiver sido arquivado.
+
+**Atenção:** se o servidor cair *durante o envio* ou *antes de terminar de arquivar o MP4*, o upload ainda pode precisar ser repetido. R2 preserva os dados, mas não fornece capacidade de computação. Evite divulgar a API pública sem autenticação, limites por usuário e controle de custos. As credenciais nunca devem ser inseridas no Netlify, GitHub ou enviadas pelo chat.
+
+A Cloudflare oferece uma faixa gratuita de armazenamento R2 Standard de 10 GB-mês e cota de operações, mas o serviço **não é gratuito sem limites** e pode exigir ativar faturamento; não foi criada nenhuma conta nem contratada infraestrutura nesta atualização.
+
+Referências oficiais: https://developers.cloudflare.com/r2/pricing/ , https://developers.cloudflare.com/r2/examples/aws/boto3/ , https://render.com/docs/free
+
+### No plano gratuito sem R2
+
+O worker continuará com armazenamento temporário e **não conseguirá preservar vídeos e cortes após reiniciar**. O processamento com áudio dividido em janelas reduz a memória necessária, mas não transforma o Render Free em um sistema garantido para vídeos longos. Para uma solução permanente e estável, será necessário configurar armazenamento durável e mais recursos de computação, ou executar o motor localmente em um computador com memória suficiente.

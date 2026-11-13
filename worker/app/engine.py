@@ -67,28 +67,75 @@ def transcription_backend_ready() -> bool:
 
 
 def transcribe(source: Path, progress: Callable[[int, str], None]) -> list[dict]:
-    progress(28, "Transcrevendo o áudio para localizar os melhores momentos")
+    """Transcribe small audio windows to avoid decoding an entire large video into RAM.
+
+    Faster-Whisper normally decodes the full media audio in memory. A long video can
+    exhaust 512 MiB hosts before its first segment is processed. FFmpeg extracts
+    small 16-kHz mono float32 windows, keeping peak input buffer bounded.
+    """
+    import math
+    import numpy as np
+
     try:
         from faster_whisper import WhisperModel
     except (ImportError, OSError) as exc:
-        logger.exception("Faster-Whisper could not load on the Render worker")
-        raise RuntimeError(
-            "O motor de transcrição não pôde ser carregado no servidor. "
-            "Confira a instalação das bibliotecas e os registros do Render."
-        ) from exc
+        logger.exception("Faster-Whisper could not load on the worker")
+        raise RuntimeError("O motor de transcrição não pôde ser carregado no servidor. Confira as dependências.") from exc
+
     try:
         model = WhisperModel(
-            os.getenv("WHISPER_MODEL", "tiny"), device="cpu",
-            compute_type="int8", cpu_threads=1, num_workers=1,
+            os.getenv("WHISPER_MODEL", "tiny"),
+            device="cpu", compute_type="int8", cpu_threads=1, num_workers=1,
         )
     except Exception as exc:
         logger.exception("Whisper model startup failed")
         raise RuntimeError(
-            "O motor de transcrição iniciou, mas não conseguiu carregar o modelo. "
-            "Verifique memória e acesso ao modelo nos registros do Render."
+            "O modelo de transcrição não carregou. Verifique os recursos de memória do servidor."
         ) from exc
-    segments, _ = model.transcribe(str(source), beam_size=3, vad_filter=True, condition_on_previous_text=False)
-    output = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segments if s.text.strip()]
+
+    duration = inspect_duration(source)
+    window_seconds = max(15, min(90, int(os.getenv("WHISPER_WINDOW_SECONDS", "45"))))
+    windows = max(1, math.ceil(duration / window_seconds))
+    output: list[dict] = []
+    language = None
+    for i in range(windows):
+        start = i * window_seconds
+        seconds = min(window_seconds, duration - start)
+        if seconds < 0.1:
+            break
+        progress(28 + int(17 * i / windows), f"Transcrevendo áudio: parte {i + 1} de {windows}")
+        command = [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", str(start),
+            "-i", str(source), "-t", str(seconds), "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_f32le", "-f", "f32le", "pipe:1",
+        ]
+        try:
+            cp = subprocess.run(command, capture_output=True, timeout=180)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("A extração do áudio demorou demais para este servidor.") from exc
+        if cp.returncode:
+            raise RuntimeError("Não foi possível extrair o áudio do vídeo: " + cp.stderr.decode("utf-8", "replace")[-300:])
+        if not cp.stdout:
+            continue
+        audio = np.frombuffer(cp.stdout, dtype="<f4")
+        # Avoid running speech recognition over entirely silent windows.
+        if not len(audio) or float(np.max(np.abs(audio))) < 0.004:
+            continue
+        kwargs = dict(beam_size=1, best_of=1, vad_filter=False, condition_on_previous_text=False)
+        if language:
+            kwargs["language"] = language
+        segments, info = model.transcribe(audio, **kwargs)
+        if not language:
+            language = info.language
+        for segment in segments:
+            phrase = segment.text.strip()
+            if phrase:
+                output.append({
+                    "start": round(start + float(segment.start), 2),
+                    "end": round(min(duration, start + float(segment.end)), 2),
+                    "text": phrase,
+                })
+        del audio, cp
     if not output:
         raise ValueError("O áudio não gerou uma transcrição utilizável. Confira se há fala inteligível.")
     return output
@@ -250,9 +297,10 @@ def render_clip(source: Path, start: float, end: float, destination: Path, style
         escaped = str(srt.resolve()).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
         scale_filter += f",subtitles=filename='{escaped}':force_style='FontName=DejaVu Sans,FontSize=16,Outline=1,Alignment=2,MarginV=28'"
     run_command([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start),
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-ss", str(start),
         "-i", str(source), "-t", str(max(0.2, end - start)), "-vf", scale_filter,
-        "-c:v", "libx264", "-preset", os.getenv("FFMPEG_PRESET", "veryfast"),
+        "-c:v", "libx264", "-threads:v", "1", "-preset", os.getenv("FFMPEG_PRESET", "veryfast"),
         "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(destination)
     ])
