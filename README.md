@@ -1,3 +1,59 @@
+# DarkCut AI v3.2 — Precision Cuts
+
+O projeto continua **100% baseado em arquivos MP4 enviados pelo usuário**. Nenhuma publicação automática nem extração de links do YouTube é realizada pelo aplicativo.
+
+## Fluxo da nova versão
+
+1. Selecione um **MP4 completo**. O upload permanece em partes de 4 MiB.
+2. Configure **dois perfis independentes**: Shorts (9:16; 8–180 s permitidos pelo motor, 20–60 s por padrão) e cortes tradicionais (16:9; 30–600 s, 2–5 min por padrão). Há contagens separadas e a opção de desativar um dos perfis.
+3. O worker transcreve em janelas de áudio pequenas, escolhe candidatos sem sobreposição **dentro de cada perfil**, e calcula um **score editorial indicativo** de 0–100 para gancho, clareza, impacto, contexto e conclusão. Os scores usam apenas heurísticas sobre palavras e pontuação da transcrição; **não são probabilidades de viralização nem garantem visualizações**. Shorts e tradicionais podem usar partes sobrepostas do mesmo vídeo para fins editoriais distintos.
+4. A nova aba **Revisar cortes** mostra cada sugestão, transcrição, cinco pontuações, título editável, início/fim editáveis e botão para assistir ao trecho no **arquivo local selecionado**. Desmarque o que não deseja exportar.
+5. Clique em **Renderizar cortes aprovados**. O servidor valida os tempos e gera **somente** os vídeos escolhidos, cada um em seu formato correspondente. Evita renderizações desnecessárias no Render gratuito.
+6. Os resultados trazem MP4, quatro abas com **Título, Descrição, Legenda de publicação e Hashtags**, TXT por corte e um ZIP completo com metadados JSON. Títulos alterados na revisão são preservados nos resultados.
+
+### Compatibilidade e infraestrutura
+
+- O Netlify hospeda a interface; o **Render Free** hospeda o processador Python, FFmpeg e Faster-Whisper. Os recursos de CPU/memória continuam limitados a **512 MiB** no serviço atual. O processamento de vídeos longos **não está garantido**, embora renderizar somente cortes aprovados economize recursos.
+- O worker 3.2 aceita o novo fluxo (`review_before_render: true`) **e o fluxo antigo 3.1** (`review_before_render` ausente ou falso). Assim, atualizar o worker primeiro não quebra um site antigo já publicado.
+- O R2 continua **opcional e não configurado por padrão**. Quando ligado, os segmentos da transcrição, o vídeo original, o estado de revisão, os MP4 e o ZIP podem ser preservados e recuperados após reinício. Sem R2, eles permanecem temporários e uma reinicialização pode interromper a edição.
+- Durante a revisão, o MP4 original permanece temporariamente no worker para permitir renderização posterior. Depois de exportado, o arquivo é removido localmente. Se a renderização falhar e não houver R2, o arquivo é mantido para uma nova tentativa enquanto o servidor estiver ativo.
+- A prévia da revisão usa o arquivo local do navegador. Após atualizar a página, será necessário selecionar o vídeo novamente para ver a prévia; os resultados já renderizados podem ser acessados pelo ID enquanto ainda armazenados. A API não fornece uma URL pública para o arquivo original.
+- A opção de títulos e descrições elaborados por modelo externo continua condicionada a **`OPENAI_API_KEY` no servidor** (pode ter custos). Sem ela, textos são sugestões extrativas fundamentadas na transcrição.
+
+### API 3.2
+
+```text
+POST /api/uploads                    JSON com filename,size,review_before_render,shorts_count,traditional_count,...
+PUT  /api/uploads/{job}/chunks/{i}  Parte do arquivo (token privado de upload)
+POST /api/uploads/{job}/finish       Inicia análise, se review_before_render=true
+GET  /api/jobs/{job}                Em status=review, devolve suggestions, scores e source_duration
+POST /api/jobs/{job}/render         JSON: {"clips":[{"id":"S01","start":12.3,"end":55.4,"title":"Título"}]}
+GET  /api/jobs/{job}/files/{name}   MP4 e ZIP quando completos
+GET  /api/health                    version=3.2.0, review_supported=true
+```
+
+No envio novo, as durações e quantidades são definidas pelos campos `shorts_count`, `shorts_min_seconds`, `shorts_max_seconds`, `traditional_count`, `traditional_min_seconds`, `traditional_max_seconds`. Valores enviados pelo navegador são validados pelo servidor; a renderização só aceita IDs realmente sugeridos para aquele projeto. O upload antigo continua disponível para evitar regressões de versões antigas do site.
+
+### Publicação da v3.2
+
+Os arquivos da pasta `site/` devem ser publicados no Netlify (pela conexão GitHub, se habilitada, ou por deploy manual). **Atualizar só o Render não disponibiliza a tela de revisão**. O worker permanece em `https://darkcut-ai-worker-nbs4.onrender.com`. Não coloque senhas ou chaves de serviço no frontend.
+
+### Testes
+
+```bash
+cd worker
+pip install -r requirements.txt pytest httpx
+pytest -q
+cd ..
+node --check site/app.js
+```
+
+Os testes automatizados usam simulações de transcrição para validar a seleção, a segurança dos intervalos, a revisão, as modalidades, a compatibilidade anterior e a exportação/ZIP. Um ensaio independente com FFmpeg verificou MP4s reais em `720x1280` e `1280x720`. **A transcrição e o processamento de vídeo real no Render 512 MiB ainda precisam ser retestados após esse deploy.**
+
+---
+
+## Histórico de instruções e versões anteriores
+
 # DarkCut AI 3.0 — File Studio
 
 **Novo fluxo:** o usuário seleciona o **arquivo completo MP4** do celular ou computador. O site envia o vídeo em partes de 4 MiB ao motor Python (Render). O motor analisa a transcrição, seleciona trechos interessantes e entrega **para cada corte**:

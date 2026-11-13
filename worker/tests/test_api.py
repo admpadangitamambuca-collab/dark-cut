@@ -67,7 +67,8 @@ def send_chunks(client, upload, data):
 
 def test_health_only_uploads_and_legacy_link_gone(prepared):
     response=prepared.get('/api/health')
-    assert response.json()['version']=='3.1.0'
+    assert response.json()['version']=='3.2.0'
+    assert response.json()['review_supported'] is True
     assert response.json()['upload_only'] is True
     assert response.json()['max_upload_bytes']==1024
     assert prepared.post('/api/jobs',json={'url':'https://youtu.be/abcd1234'}).status_code==410

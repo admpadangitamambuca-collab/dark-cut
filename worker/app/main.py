@@ -22,10 +22,11 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .engine import ai_metadata, inspect_duration, render_clip, select_clips, transcribe, transcription_backend_ready, write_srt
 from . import storage
+from .precision import select_precision_clips
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ LOCK = threading.Lock()
 ACTIVE: set[str] = set()
 UPLOADS: dict[str, dict] = {}
 
-app = FastAPI(title="DarkCut AI — File Studio", version="3.1.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="DarkCut AI — File Studio", version="3.2.0", docs_url=None, redoc_url=None)
 allowed = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:8888,http://localhost:8000").split(",") if s.strip()]
 app.add_middleware(
     CORSMiddleware, allow_origins=allowed, allow_credentials=False,
@@ -53,6 +54,40 @@ class JobSettings(BaseModel):
     min_seconds: int = Field(default=25, ge=10, le=90)
     max_seconds: int = Field(default=60, ge=15, le=120)
     subtitles: bool = True
+    # Review mode is opt-in: sites still running v3.1 retain the existing flow.
+    review_before_render: bool = False
+    shorts_count: int = Field(default=3, ge=0, le=5)
+    traditional_count: int = Field(default=1, ge=0, le=3)
+    shorts_min_seconds: int = Field(default=20, ge=8, le=180)
+    shorts_max_seconds: int = Field(default=60, ge=8, le=180)
+    traditional_min_seconds: int = Field(default=120, ge=30, le=600)
+    traditional_max_seconds: int = Field(default=300, ge=30, le=600)
+
+
+class RenderChoice(BaseModel):
+    id: str = Field(min_length=3, max_length=3, pattern=r"^[SN][0-9]{2}$")
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    title: str = Field(min_length=1, max_length=100)
+
+    @field_validator("start", "end")
+    @classmethod
+    def finite_number(cls, value: float) -> float:
+        import math
+        if not math.isfinite(value):
+            raise ValueError("O horário do corte deve ser um número finito.")
+        return value
+
+
+class RenderRequest(BaseModel):
+    clips: list[RenderChoice] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def unique_choices(self):
+        ids = [item.id for item in self.clips]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Não é permitido repetir um corte na seleção.")
+        return self
 
 
 class UploadStart(JobSettings):
@@ -63,6 +98,13 @@ class UploadStart(JobSettings):
 def _validated_settings(settings: JobSettings) -> None:
     if settings.min_seconds > settings.max_seconds:
         raise HTTPException(422, "A duração mínima não pode ultrapassar a máxima.")
+    if settings.review_before_render:
+        if settings.shorts_count + settings.traditional_count < 1:
+            raise HTTPException(422, "Escolha pelo menos um formato de corte.")
+        if settings.shorts_min_seconds > settings.shorts_max_seconds:
+            raise HTTPException(422, "Duração inválida para Shorts.")
+        if settings.traditional_min_seconds > settings.traditional_max_seconds:
+            raise HTTPException(422, "Duração inválida para cortes tradicionais.")
 
 
 def _job_id_valid(value: str) -> bool:
@@ -227,6 +269,189 @@ def do_job(job_id: str, settings: JobSettings, uploaded_source: Path, backed_up:
             ACTIVE.discard(job_id)
 
 
+
+def _persist_state(job_id: str, state: dict) -> None:
+    save(job_id, state)
+    if storage.enabled():
+        storage.put_state(job_id, state)
+
+
+def _restore_original(job_id: str, path: Path) -> None:
+    if not path.is_file():
+        if not storage.enabled():
+            raise RuntimeError("O vídeo original expirou. Reenvie o arquivo para gerar novos cortes.")
+        storage.fetch_file(job_id, "original.mp4", path)
+
+
+def do_precision_analysis(job_id: str, settings: JobSettings, source: Path, backed_up: bool = False) -> None:
+    """Analyze once; pause for editorial review before any expensive video exports."""
+    directory = ROOT / job_id
+    state = snapshot(job_id)
+
+    def progress(pct, message):
+        state.update(status="processing", phase="analysis", progress=pct, message=message)
+        save(job_id, state)
+
+    try:
+        _restore_original(job_id, source)
+        state["settings"] = settings.model_dump()
+        if storage.enabled() and not backed_up:
+            progress(24, "Preservando vídeo no armazenamento persistente")
+            storage.put_file(job_id, source)
+            storage.put_state(job_id, state)
+        progress(26, "Analisando duração e transcrevendo em partes")
+        duration = inspect_duration(source)
+        segments = transcribe(source, progress)
+        transcript_path = directory / "segments.json"
+        transcript_path.write_text(json.dumps(segments, ensure_ascii=False), encoding="utf-8")
+        if storage.enabled():
+            storage.put_file(job_id, transcript_path)
+        progress(46, "Comparando ganchos, contexto e conclusões")
+        plans = (
+            ("shorts", settings.shorts_count, settings.shorts_min_seconds, settings.shorts_max_seconds),
+            ("traditional", settings.traditional_count, settings.traditional_min_seconds, settings.traditional_max_seconds),
+        )
+        suggestions = []
+        omitted = []
+        for profile, count, minimum, maximum in plans:
+            if not count:
+                continue
+            found = select_precision_clips(segments, profile, count, minimum, maximum, duration)
+            if not found:
+                omitted.append("Shorts" if profile == "shorts" else "cortes tradicionais")
+            for item in found:
+                meta = ai_metadata(item["transcript"], len(suggestions) + 1)
+                item.update(meta)
+                suggestions.append(item)
+        if not suggestions:
+            raise ValueError("Nenhum trecho adequado à duração solicitada foi encontrado. Escolha durações menores.")
+        state.update(
+            status="review", phase="review", progress=50,
+            message="Seleção inteligente pronta. Revise e aprove antes de renderizar.",
+            suggestions=suggestions, source_duration=duration, clips=[], bundle_url=None,
+            omitted_profiles=omitted, settings=settings.model_dump(),
+        )
+        _persist_state(job_id, state)
+    except Exception as exc:
+        logger.exception("Precision analysis failed for job %s", job_id)
+        state.update(status="failed", progress=0, phase="analysis", message=str(exc)[:550])
+        try:
+            _persist_state(job_id, state)
+        except Exception:
+            logger.exception("Could not persist failed analysis %s", job_id)
+    finally:
+        # The original must remain available while the user reviews proposed cuts.
+        with LOCK:
+            ACTIVE.discard(job_id)
+
+
+def _validated_render_choices(job_id: str, state: dict, payload: RenderRequest) -> list[RenderChoice]:
+    source_duration = float(state.get("source_duration", 0))
+    by_id = {s["id"]: s for s in state.get("suggestions", [])}
+    if not by_id:
+        raise HTTPException(409, "Nenhuma sugestão disponível para revisão.")
+    for choice in payload.clips:
+        suggestion = by_id.get(choice.id)
+        if not suggestion:
+            raise HTTPException(422, f"Corte não reconhecido: {choice.id}")
+        length = choice.end - choice.start
+        mode = suggestion["profile"]
+        cap = 180 if mode == "shorts" else 600
+        minimum = 8 if mode == "shorts" else 30
+        if (choice.end > source_duration + .01 or length < minimum or length > cap or
+                choice.start >= choice.end or not choice.title.strip()):
+            raise HTTPException(422, f"Intervalo inválido para o corte {choice.id}. "
+                                     f"O formato permite de {minimum} a {cap} segundos.")
+    return payload.clips
+
+
+def do_precision_render(job_id: str, settings: JobSettings, source: Path,
+                        choices: list[RenderChoice], backed_up: bool = False) -> None:
+    """Render only approved cuts, saving individual artifacts before packaging."""
+    directory = ROOT / job_id
+    state = snapshot(job_id)
+
+    def progress(pct, message):
+        state.update(status="processing", phase="render", progress=pct, message=message)
+        save(job_id, state)
+
+    try:
+        _restore_original(job_id, source)
+        transcript_path = directory / "segments.json"
+        if not transcript_path.exists():
+            if not storage.enabled():
+                raise RuntimeError("A transcrição expirou. Analise o vídeo novamente.")
+            storage.fetch_file(job_id, "segments.json", transcript_path)
+        segments = json.loads(transcript_path.read_text(encoding="utf-8"))
+        original = {x["id"]: x for x in state["suggestions"]}
+        state["clips"] = []
+        state["bundle_url"] = None
+        exported: list[str] = []
+        for i, item in enumerate(choices, 1):
+            proposal = original[item.id]
+            mode = proposal["profile"]
+            progress(52 + int(40 * (i - 1) / len(choices)), f"Renderizando corte aprovado {i}/{len(choices)}")
+            # For adjusted ranges, derive the transcript and its captions from actual times.
+            text = " ".join(str(seg["text"]) for seg in segments
+                            if float(seg["start"]) < item.end and float(seg["end"]) > item.start)
+            subtitle_file = directory / f"corte_{i:02d}.srt"
+            srt = subtitle_file if settings.subtitles and write_srt(segments, item.start, item.end, subtitle_file) else None
+            style = "vertical" if mode == "shorts" else "horizontal"
+            filename = f"corte_{i:02d}_{style}.mp4"
+            render_clip(source, item.start, item.end, directory / filename, style, srt)
+            exported.append(filename)
+            fields = {k: proposal[k] for k in ("description", "caption", "hashtags", "metadata_source")}
+            fields.update(title=item.title.strip(), summary=proposal["description"])
+            record = {
+                "id": i, "suggestion_id": item.id, "profile": mode,
+                "start": round(item.start, 2), "end": round(item.end, 2),
+                "duration": round(item.end - item.start, 2), "scores": proposal["scores"],
+                "transcript": text[:12000], **fields,
+                "files": {style: f"/api/jobs/{job_id}/files/{filename}"},
+            }
+            publication = (
+                f"CORTE {i:02d} | {'SHORTS' if mode == 'shorts' else 'TRADICIONAL'}\n\n"
+                f"TÍTULO\n{record['title']}\n\nDESCRIÇÃO\n{record['description']}\n\n"
+                f"LEGENDA PARA PUBLICAÇÃO\n{record['caption']}\n\n"
+                f"HASHTAGS\n{' '.join(record['hashtags'])}\n"
+            )
+            txt = f"publicacao_corte_{i:02d}.txt"
+            (directory / txt).write_text(publication, encoding="utf-8")
+            exported.append(txt)
+            state["clips"].append(record)
+            save(job_id, state)
+            if storage.enabled():
+                storage.put_file(job_id, directory / filename)
+                storage.put_file(job_id, directory / txt)
+                storage.put_state(job_id, state)
+        progress(95, "Compactando cortes e textos aprovados")
+        bundle_name = "DarkCut_cortes_e_publicacoes.zip"
+        with zipfile.ZipFile(directory / bundle_name, "w", compression=zipfile.ZIP_DEFLATED,
+                             compresslevel=3) as archive:
+            for name in exported:
+                archive.write(directory / name, arcname=name)
+            archive.writestr("dados_dos_cortes.json", json.dumps(state["clips"], ensure_ascii=False, indent=2))
+        state.update(status="completed", phase="completed", progress=100,
+                     message="Cortes aprovados prontos para download",
+                     bundle_url=f"/api/jobs/{job_id}/files/{bundle_name}")
+        if storage.enabled():
+            storage.put_file(job_id, directory / bundle_name)
+        _persist_state(job_id, state)
+    except Exception as exc:
+        logger.exception("Precision render failed for job %s", job_id)
+        state.update(status="failed", progress=0, phase="render", message=str(exc)[:550])
+        try:
+            _persist_state(job_id, state)
+        except Exception:
+            logger.exception("Could not persist failed render %s", job_id)
+    finally:
+        # Preserve the source for an in-place retry if rendering fails without R2.
+        if state.get("status") == "completed" or storage.enabled():
+            source.unlink(missing_ok=True)
+        with LOCK:
+            ACTIVE.discard(job_id)
+
+
 def _upload_state(job_id: str, token: str) -> dict:
     if not _job_id_valid(job_id):
         raise HTTPException(404, "Upload não encontrado.")
@@ -242,7 +467,8 @@ def _upload_state(job_id: str, token: str) -> dict:
 @app.get("/api/health")
 def health():
     return {
-        "ok": True, "version": "3.1.0", "upload_only": True, "transcription_ready": transcription_backend_ready(),
+        "ok": True, "version": "3.2.0", "upload_only": True, "review_supported": True,
+        "transcription_ready": transcription_backend_ready(),
         "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
         "transcription_model": os.getenv("WHISPER_MODEL", "tiny"),
         "max_upload_bytes": MAX_UPLOAD_BYTES, "chunk_bytes": CHUNK_BYTES,
@@ -329,7 +555,8 @@ async def finish_upload(job_id: str, request: Request):
         save(job_id, state)
         with LOCK:
             UPLOADS.pop(job_id, None)
-        POOL.submit(do_job, job_id, data["settings"], destination)
+        processor = do_precision_analysis if data["settings"].review_before_render else do_job
+        POOL.submit(processor, job_id, data["settings"], destination)
         return snapshot(job_id)
 
 
@@ -397,6 +624,32 @@ def read_job(job_id: str):
     return snapshot(job_id)
 
 
+@app.post("/api/jobs/{job_id}/render", status_code=202)
+def approve_and_render(job_id: str, payload: RenderRequest):
+    state = snapshot(job_id)
+    if state.get("status") != "review" and not (
+        state.get("status") == "failed" and state.get("phase") == "render" and state.get("suggestions")
+    ):
+        raise HTTPException(409, "Este projeto ainda não está pronto para revisão ou já foi renderizado.")
+    choices = _validated_render_choices(job_id, state, payload)
+    settings = JobSettings(**state["settings"])
+    with LOCK:
+        if job_id in ACTIVE or len(ACTIVE) >= MAX_JOBS:
+            raise HTTPException(429, "O motor está ocupado. Tente novamente após o processamento atual.")
+        ACTIVE.add(job_id)
+    try:
+        state.update(status="processing", phase="render", progress=51,
+                     message="Renderização dos cortes aprovados iniciada",
+                     render_choices=[x.model_dump() for x in choices])
+        _persist_state(job_id, state)
+        POOL.submit(do_precision_render, job_id, settings, ROOT / job_id / "original.mp4", choices)
+    except Exception:
+        with LOCK:
+            ACTIVE.discard(job_id)
+        raise
+    return state
+
+
 @app.post("/api/jobs/{job_id}/resume", status_code=202)
 def resume_job(job_id: str):
     if not _job_id_valid(job_id) or not storage.enabled():
@@ -414,7 +667,14 @@ def resume_job(job_id: str):
         source = ROOT / job_id / "original.mp4"
         state.update(status="processing", progress=24, message="Recuperando vídeo arquivado")
         save(job_id, state)
-        POOL.submit(do_job, job_id, settings, source, True)
+        if settings.review_before_render:
+            if state.get("phase") == "render" and state.get("render_choices"):
+                choice_models = [RenderChoice(**c) for c in state["render_choices"]]
+                POOL.submit(do_precision_render, job_id, settings, source, choice_models, True)
+            else:
+                POOL.submit(do_precision_analysis, job_id, settings, source, True)
+        else:
+            POOL.submit(do_job, job_id, settings, source, True)
     except Exception:
         with LOCK:
             ACTIVE.discard(job_id)

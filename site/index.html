@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0c16">
   <meta name="description" content="DarkCut AI: transforme vídeos e lives arquivadas em cortes com títulos, hashtags e resumos prontos para copiar.">
-  <title>DarkCut AI — Creative Studio</title>
+  <title>DarkCut AI 3.2 — Precision Cuts</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -14,15 +14,16 @@
 <body>
 <div class="app-shell">
   <aside class="sidebar" aria-label="Menu principal">
-    <a class="brand" href="#studio"><span class="brand-mark"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7.5 24.5 16 8 24.5V7.5Z" fill="currentColor"/><path d="M5 4v24M27 4v24" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg></span><span>DARKCUT<span class="brand-accent"> AI</span><small>CREATIVE STUDIO</small></span></a>
+    <a class="brand" href="#studio"><span class="brand-mark"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7.5 24.5 16 8 24.5V7.5Z" fill="currentColor"/><path d="M5 4v24M27 4v24" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg></span><span>DARKCUT<span class="brand-accent"> AI</span><small>PRECISION CUTS</small></span></a>
     <div class="menu-group"><span class="section-label">ESPAÇO DE TRABALHO</span>
       <a href="#studio" class="menu-link active" data-nav="studio"><span class="nav-icon">◈</span> Novo projeto <span class="menu-indicator"></span></a>
+      <a href="#review" class="menu-link" data-nav="review"><span class="nav-icon">✧</span> Revisão de cortes</a>
       <a href="#results" class="menu-link" data-nav="results"><span class="nav-icon">▣</span> Meus cortes</a>
       <a href="#setup" class="menu-link" data-nav="setup"><span class="nav-icon">⚙</span> Configuração</a>
     </div>
     <div class="sidebar-bottom">
       <div class="side-tip"><span class="tip-star">✦</span><strong>Do arquivo ao corte.</strong><p>Envie um vídeo inteiro. Receba cortes e textos prontos para publicar.</p></div>
-      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v3.0</span></div>
+      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v3.2</span></div>
     </div>
   </aside>
 
@@ -32,7 +33,7 @@
       <div class="hero">
         <div class="hero-copy"><div class="eyebrow"><span class="eyebrow-mark">✦</span> EDIÇÃO INTELIGENTE <span class="eyebrow-line"></span> DARKCUT STUDIO</div>
           <h1>Seus melhores <em>momentos,</em><br>prontos para destacar.</h1>
-          <p>Envie o vídeo completo do seu aparelho. O estúdio identifica trechos de destaque, monta Shorts e cortes tradicionais e prepara os textos para publicação.</p>
+          <p>Envie o vídeo completo do seu aparelho. O estúdio identifica trechos de destaque em dois formatos, mostra uma avaliação editorial e deixa você aprovar e ajustar cada corte antes da exportação.</p>
           <div class="hero-chips"><span><i>✓</i> Cortes automáticos</span><span><i>✓</i> Vertical + horizontal</span><span><i>✓</i> Publicações prontas para copiar</span></div>
         </div>
         <div class="hero-art" aria-hidden="true"><div class="art-glow"></div><div class="art-card art-card-back"><span class="art-play">▶</span><span class="art-wave"></span></div><div class="art-card art-card-front"><span class="art-lines"><i></i><i></i><i></i></span><span class="art-dot"></span></div><div class="art-label">✦ AI HIGHLIGHTS</div><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div></div>
@@ -40,7 +41,7 @@
 
       <div class="studio-grid">
         <section class="panel create-panel" aria-labelledby="create-title">
-          <div class="panel-heading"><div><div class="card-kicker">01 / INICIAR CRIAÇÃO</div><h2 id="create-title">Criar novos cortes</h2><p>Selecione o vídeo completo e escolha como deseja os cortes.</p></div><span class="heading-icon">✦</span></div>
+          <div class="panel-heading"><div><div class="card-kicker">01 / INICIAR CRIAÇÃO</div><h2 id="create-title">Criar novos cortes</h2><p>Dois motores de seleção: Shorts com ritmo rápido e vídeos tradicionais com mais contexto.</p></div><span class="heading-icon">✦</span></div>
           <form id="create-form">
             <div class="source-heading"><span class="source-icon">⇧</span><div><strong>Envie o vídeo completo</strong><small>Da galeria, Downloads ou computador • Somente arquivos MP4</small></div></div>
             <label for="video-file" class="upload-zone" id="upload-zone">
@@ -54,30 +55,43 @@
               <div class="file-preview-info"><strong id="file-preview-name"></strong><span id="file-preview-data"></span></div>
             </div>
             <div class="field-divider"></div>
-            <div class="options-heading"><strong>Configurar a criação</strong><span>FORMATO E QUANTIDADE</span></div>
-            <div class="field-columns">
-              <div class="field-group"><label class="field-label" for="clip-count">QUANTIDADE DE CORTES</label><div class="select-shell"><select id="clip-count"><option value="1">1 corte</option><option value="2">2 cortes</option><option value="3" selected>3 cortes</option><option value="4">4 cortes</option><option value="5">5 cortes</option><option value="6">6 cortes</option><option value="8">8 cortes</option></select><span>⌄</span></div></div>
-              <div class="field-group"><label class="field-label" for="clip-length">DURAÇÃO DOS TRECHOS</label><div class="select-shell"><select id="clip-length"><option value="15,35">15–35 segundos</option><option value="25,60" selected>25–60 segundos</option><option value="45,90">45–90 segundos</option><option value="60,120">60–120 segundos</option></select><span>⌄</span></div></div>
+            <div class="options-heading"><strong>Configurar a criação</strong><span>DUAS SELEÇÕES INDEPENDENTES</span></div>
+            <div class="field-columns precision-fields">
+              <div class="field-group"><label class="field-label" for="shorts-count">SHORTS · QUANTIDADE</label><div class="select-shell"><select id="shorts-count"><option value="0">Nenhum</option><option value="1">1 Short</option><option value="2">2 Shorts</option><option value="3" selected>3 Shorts</option><option value="4">4 Shorts</option><option value="5">5 Shorts</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="shorts-length">SHORTS · DURAÇÃO</label><div class="select-shell"><select id="shorts-length"><option value="15,35">15–35 segundos</option><option value="20,60" selected>20–60 segundos</option><option value="60,120">60–120 segundos</option><option value="90,180">90–180 segundos</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="normal-count">TRADICIONAL · QUANTIDADE</label><div class="select-shell"><select id="normal-count"><option value="0">Nenhum</option><option value="1" selected>1 corte</option><option value="2">2 cortes</option><option value="3">3 cortes</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="normal-length">TRADICIONAL · DURAÇÃO</label><div class="select-shell"><select id="normal-length"><option value="45,120">45–120 segundos</option><option value="60,180">1–3 minutos</option><option value="120,300" selected>2–5 minutos</option><option value="180,480">3–8 minutos</option></select><span>⌄</span></div></div>
             </div>
+            <p class="helper">Os dois formatos são analisados separadamente. Se o vídeo não tiver duração suficiente para um formato, o app avisará na revisão.</p>
             <div class="export-types" aria-label="Formatos que serão entregues">
               <div class="export-type"><span class="format-glyph">▯</span><div><strong>Shorts</strong><small>Vertical 9:16 · 720 × 1280</small></div><span class="format-ready">✓</span></div>
               <div class="export-type"><span class="format-glyph">▭</span><div><strong>Corte tradicional</strong><small>Horizontal 16:9 · 1280 × 720</small></div><span class="format-ready">✓</span></div>
             </div>
             <div class="subtitles-row"><div class="subtitles-symbol">▤</div><div class="subtitles-desc"><strong>Legendas automáticas no vídeo</strong><span>Transcrever o áudio e incluir legendas nos dois formatos</span></div><label class="switch"><input id="include-subtitles" type="checkbox" checked><span class="switch-track"></span><span class="sr-only">Habilitar legendas</span></label></div>
             <div id="form-error" role="alert" class="error-message" hidden></div>
-            <button class="primary-btn" id="generate-btn" type="submit"><span class="btn-star">✦</span><span id="generate-label">Analisar vídeo e gerar cortes</span><span class="btn-arrow">↗</span></button>
+            <button class="primary-btn" id="generate-btn" type="submit"><span class="btn-star">✦</span><span id="generate-label">Analisar vídeo e revisar cortes</span><span class="btn-arrow">↗</span></button>
             <p class="footer-note">Nenhum vídeo é publicado automaticamente. Utilize apenas arquivos que tenha autorização para editar.</p>
           </form>
         </section>
-        <aside class="right-column"><div class="panel insight-panel"><div class="insight-top"><span class="insight-icon">◉</span><span class="insight-pill">WORKFLOW</span></div><h3>Do vídeo completo à publicação, em um fluxo.</h3><div class="workflow-steps"><div><span>01</span><p><strong>Detectar</strong><small>O motor analisa a fala e seleciona trechos com potencial</small></p></div><div><span>02</span><p><strong>Editar</strong><small>Shorts 9:16 + cortes tradicionais 16:9</small></p></div><div><span>03</span><p><strong>Preparar</strong><small>Título, descrição, legenda de postagem e hashtags por corte</small></p></div></div></div>
+        <aside class="right-column"><div class="panel insight-panel"><div class="insight-top"><span class="insight-icon">◉</span><span class="insight-pill">WORKFLOW</span></div><h3>Do vídeo completo à publicação, em um fluxo.</h3><div class="workflow-steps"><div><span>01</span><p><strong>Detectar</strong><small>O motor analisa a fala e seleciona trechos com potencial</small></p></div><div><span>02</span><p><strong>Revisar</strong><small>Confira a pontuação, ajuste os tempos e aprove somente o que gostar</small></p></div><div><span>03</span><p><strong>Exportar</strong><small>Vídeos e textos de publicação dos cortes aprovados</small></p></div></div></div>
           <div class="mini-panel"><div class="mini-panel-icon">⇩</div><div><strong>Arquivos sob seu controle</strong><p>Baixe MP4, textos separados e o ZIP completo. A publicação é sempre manual.</p></div></div>
         </aside>
       </div>
 
-      <section id="progress-panel" class="panel progress-panel" hidden aria-live="polite"><div class="progress-upper"><div><div class="card-kicker">02 / PROCESSAMENTO</div><h2>Preparando seus cortes</h2><p id="job-stage">Aguardando processamento…</p></div><div class="progress-number" id="progress-number">0%</div></div><div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div><p class="progress-foot">O upload tem progresso independente. Depois disso, o servidor processa e prepara cada corte e seus textos.</p></section>
+      <section id="progress-panel" class="panel progress-panel" hidden aria-live="polite"><div class="progress-upper"><div><div class="card-kicker">02 / PROCESSAMENTO</div><h2>Preparando seus cortes</h2><p id="job-stage">Aguardando processamento…</p></div><div class="progress-number" id="progress-number">0%</div></div><div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div><p class="progress-foot">O upload e a transcrição acontecem primeiro. Você aprova as sugestões antes da renderização dos MP4.</p></section>
+
+      <section id="review" class="review-section panel" aria-labelledby="review-title" hidden>
+        <div class="review-heading"><div><div class="card-kicker">03 / CURADORIA INTELIGENTE</div><h2 id="review-title">Revise antes de exportar</h2><p id="review-summary">Veja a análise e ajuste os trechos aprovados.</p></div><span class="review-eyebrow">PRECISION CUTS</span></div>
+        <div class="review-layout">
+          <div class="review-player-box"><video id="review-player" controls playsinline preload="metadata"></video><div class="review-player-caption" id="review-player-caption">Selecione “Assistir trecho” para conferir o início e o fim.</div></div>
+          <div><p class="review-disclaimer">Pontuações editoriais estimadas pela transcrição. Não são probabilidades de viralizar.</p><div id="review-list" class="review-list"></div></div>
+        </div>
+        <div id="review-error" class="error-message" role="alert" hidden></div>
+        <div class="review-actions"><span id="review-selection-count">Escolha os cortes para exportar</span><button id="review-render" class="primary-btn" type="button">✦ Renderizar cortes aprovados <span class="btn-arrow">↗</span></button></div>
+      </section>
 
       <section id="results" class="results-section" aria-labelledby="results-title">
-        <div class="results-heading"><div><div class="card-kicker">03 / RESULTADOS</div><h2 id="results-title">Seus cortes <span id="results-count"></span></h2><p id="results-desc">Quando seus cortes estiverem prontos, eles aparecerão aqui para prévia e download.</p></div><button id="download-all" class="secondary-btn" type="button" hidden>⇩ Baixar todos em ZIP</button></div>
+        <div class="results-heading"><div><div class="card-kicker">04 / RESULTADOS</div><h2 id="results-title">Seus cortes <span id="results-count"></span></h2><p id="results-desc">Quando seus cortes estiverem prontos, eles aparecerão aqui para prévia e download.</p></div><button id="download-all" class="secondary-btn" type="button" hidden>⇩ Baixar todos em ZIP</button></div>
         <div id="results-empty" class="results-empty"><div class="empty-graphic"><span>▣</span><i>✦</i></div><strong>Seu próximo conteúdo começa aqui</strong><p>Escolha um arquivo MP4 e o DarkCut AI preparará os melhores momentos, os dois formatos e os textos da publicação.</p></div>
         <div id="clip-list" class="clip-list" aria-live="polite"></div>
       </section>

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.2.0 — Precision Cuts
+
+- Análise separada de trechos Shorts/vertical e tradicionais/horizontal, com durações e quantidades independentes.
+- Heurísticas editoriais explicáveis: gancho, clareza, impacto, contexto e fechamento, com pontuação indicativa (0–100; não prevê viralização).
+- Novo passo **Revisão** antes do FFmpeg: reproduzir trecho do MP4 local, ajustar início/fim, editar título e remover sugestões antes de renderizar.
+- Renderização exclusivamente dos cortes escolhidos e exportação por perfil, com os quatro textos e ZIP final.
+- Novas rotas de análise/revisão e validação de propostas no servidor; mantém fluxo antigo para Netlify ainda não atualizado.
+- Preserva benefícios de economia de RAM e do armazenamento R2 opcional da v3.1; arquivos de transcrição e estado da revisão também suportam R2.
+- Testes unitários/API e FFmpeg para os dois formatos.
+
+
 ## 3.0.0 — File Studio
 
 - O envio do **arquivo MP4 completo** substitui a inserção de links na interface.
