@@ -32,3 +32,22 @@ def test_selection_nonoverlap():
 
 def test_no_segments_no_clips():
     assert select_clips([],3,20,35)==[]
+
+
+def test_transcription_import_failure_has_actionable_error(monkeypatch, tmp_path):
+    import builtins
+    from app import engine
+
+    native_import = builtins.__import__
+
+    def missing_openmp(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("libgomp.so.1: cannot open shared object file")
+        return native_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_openmp)
+    engine.transcription_backend_ready.cache_clear()
+    assert engine.transcription_backend_ready() is False
+    with pytest.raises(RuntimeError, match="não pôde ser carregado no servidor"):
+        engine.transcribe(tmp_path / "entrada.mp4", lambda *args: None)
+    engine.transcription_backend_ready.cache_clear()

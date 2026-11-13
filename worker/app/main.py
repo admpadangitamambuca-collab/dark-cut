@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -23,7 +24,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .engine import ai_metadata, inspect_duration, render_clip, select_clips, transcribe, write_srt
+from .engine import ai_metadata, inspect_duration, render_clip, select_clips, transcribe, transcription_backend_ready, write_srt
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(os.getenv("DATA_DIR", "/tmp/darkcut-jobs"))
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -178,6 +181,7 @@ def do_job(job_id: str, settings: JobSettings, uploaded_source: Path) -> None:
         })
         save(job_id, state)
     except Exception as exc:
+        logger.exception("Video processing failed for job %s", job_id)
         state.update({"status": "failed", "progress": 0, "message": str(exc)[:650]})
         save(job_id, state)
     finally:
@@ -201,7 +205,7 @@ def _upload_state(job_id: str, token: str) -> dict:
 @app.get("/api/health")
 def health():
     return {
-        "ok": True, "version": "3.0.0", "upload_only": True,
+        "ok": True, "version": "3.0.0", "upload_only": True, "transcription_ready": transcription_backend_ready(),
         "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
         "transcription_model": os.getenv("WHISPER_MODEL", "tiny"),
         "max_upload_bytes": MAX_UPLOAD_BYTES, "chunk_bytes": CHUNK_BYTES,

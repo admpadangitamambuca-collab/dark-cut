@@ -98,3 +98,14 @@ Abra http://localhost:8888 e, em **Configuração**, selecione http://localhost:
 ## Versão
 
 **3.0.0** — Novo aplicativo de upload de arquivo completo, sem dependências de download de YouTube; 4 abas por corte; envio em partes; ZIP com vídeo e kit de publicação.
+
+
+## Correção da transcrição no Render (3.0.1)
+
+A imagem do worker instala `libgomp1` (dependência nativa/OpenMP de bibliotecas de inferência),
+limita `huggingface-hub` à família 0.x para compatibilidade com `faster-whisper==1.1.1`
+e valida a instrução `from faster_whisper import WhisperModel` **durante o build Docker**.
+A rota `/api/health` informa `transcription_ready`; um valor `true` confirma que o módulo importa
+(sem garantir que o modelo esteja baixado ou que o Render gratuito tenha RAM suficiente para transcrever vídeos longos).
+Falhas de importação e carregamento do modelo são registradas no Render com traceback,
+e o usuário recebe uma mensagem distinguindo biblioteca ausente e falha de inicialização do modelo.

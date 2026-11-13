@@ -5,6 +5,9 @@ When unavailable, metadata is transparently marked as an extractive suggestion.
 """
 from __future__ import annotations
 
+import logging
+from functools import lru_cache
+
 import json
 import os
 import re
@@ -49,13 +52,41 @@ def inspect_duration(source: Path) -> float:
     return value
 
 
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def transcription_backend_ready() -> bool:
+    """Import check only; the Whisper model itself downloads/loads when required."""
+    try:
+        from faster_whisper import WhisperModel  # noqa: F401
+    except (ImportError, OSError):
+        logger.exception("Faster-Whisper import failed; check native and Python dependencies")
+        return False
+    return True
+
+
 def transcribe(source: Path, progress: Callable[[int, str], None]) -> list[dict]:
     progress(28, "Transcrevendo o áudio para localizar os melhores momentos")
     try:
         from faster_whisper import WhisperModel
-    except ImportError as e:
-        raise RuntimeError("Motor de transcrição não instalado. Instale os requisitos Python do worker.") from e
-    model = WhisperModel(os.getenv("WHISPER_MODEL", "base"), device="cpu", compute_type="int8")
+    except (ImportError, OSError) as exc:
+        logger.exception("Faster-Whisper could not load on the Render worker")
+        raise RuntimeError(
+            "O motor de transcrição não pôde ser carregado no servidor. "
+            "Confira a instalação das bibliotecas e os registros do Render."
+        ) from exc
+    try:
+        model = WhisperModel(
+            os.getenv("WHISPER_MODEL", "tiny"), device="cpu",
+            compute_type="int8", cpu_threads=1, num_workers=1,
+        )
+    except Exception as exc:
+        logger.exception("Whisper model startup failed")
+        raise RuntimeError(
+            "O motor de transcrição iniciou, mas não conseguiu carregar o modelo. "
+            "Verifique memória e acesso ao modelo nos registros do Render."
+        ) from exc
     segments, _ = model.transcribe(str(source), beam_size=3, vad_filter=True, condition_on_previous_text=False)
     output = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segments if s.text.strip()]
     if not output:
