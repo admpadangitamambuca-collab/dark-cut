@@ -56,6 +56,31 @@
     els.fill.style.width = `${pct}%`;
     els.stage.textContent = message || 'Processando…';
   }
+  function apiErrorMessage(data, status) {
+    if (typeof data?.detail === 'string') return data.detail;
+    if (Array.isArray(data?.detail)) {
+      const fields = {
+        filename: 'nome do arquivo', size: 'tamanho do arquivo',
+        count: 'quantidade', min_seconds: 'duração mínima',
+        max_seconds: 'duração máxima',
+        shorts_count: 'quantidade de Shorts',
+        traditional_count: 'quantidade de cortes tradicionais',
+        shorts_min_seconds: 'duração mínima dos Shorts',
+        shorts_max_seconds: 'duração máxima dos Shorts',
+        traditional_min_seconds: 'duração mínima dos cortes tradicionais',
+        traditional_max_seconds: 'duração máxima dos cortes tradicionais',
+      };
+      const errors = data.detail.map((entry) => {
+        const field = Array.isArray(entry.loc)
+          ? entry.loc.filter((part) => part !== 'body').join('.')
+          : '';
+        return `${fields[field] || field || 'Parâmetro'}: ${entry.msg || 'valor inválido'}`;
+      });
+      if (errors.length) return `Confira as configurações do vídeo: ${errors.join('; ')}.`;
+    }
+    return `Erro do servidor (HTTP ${status}).`;
+  }
+
   async function api(path, options = {}) {
     let response;
     try {
@@ -70,7 +95,7 @@
     let data;
     try { data = await response.json(); } catch (_) { throw new Error('O servidor retornou uma resposta inválida.'); }
     if (!response.ok) {
-      throw new Error(typeof data.detail === 'string' ? data.detail : `Erro do servidor (HTTP ${response.status}).`);
+      throw new Error(apiErrorMessage(data, response.status));
     }
     return data;
   }
@@ -144,7 +169,7 @@
         }
         if (!response.ok) {
           const detail = await response.json().catch(() => ({}));
-          throw new Error(typeof detail.detail === 'string' ? detail.detail : `Erro ao enviar parte ${i + 1} (HTTP ${response.status}).`);
+          throw new Error(apiErrorMessage(detail, response.status) + ` (parte ${i + 1}).`);
         }
         const info = await response.json();
         uploaded = info.received;
@@ -195,7 +220,8 @@
     if (!shortsCount && !normalCount) { setError('Escolha ao menos um Short ou corte tradicional.'); busy(false); return; }
     try {
       const result = await sendVideoInChunks(currentFile, {
-        count: shortsCount || 1, min_seconds: shortParts[0], max_seconds: shortParts[1],
+        // Em modo de revisão, o backend usa as durações independentes abaixo.
+        // Não enviar os campos legados (max_seconds <= 120), que rejeitavam Shorts de 90–180 s.
         review_before_render: true, shorts_count: shortsCount, traditional_count: normalCount,
         shorts_min_seconds: shortParts[0], shorts_max_seconds: shortParts[1],
         traditional_min_seconds: normalParts[0], traditional_max_seconds: normalParts[1],
