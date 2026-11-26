@@ -199,3 +199,11 @@ Referências oficiais: https://developers.cloudflare.com/r2/pricing/ , https://d
 ### No plano gratuito sem R2
 
 O worker continuará com armazenamento temporário e **não conseguirá preservar vídeos e cortes após reiniciar**. O processamento com áudio dividido em janelas reduz a memória necessária, mas não transforma o Render Free em um sistema garantido para vídeos longos. Para uma solução permanente e estável, será necessário configurar armazenamento durável e mais recursos de computação, ou executar o motor localmente em um computador com memória suficiente.
+
+## 3.3 — Creative Studio
+
+- Três trilhas instrumentais originais sintetizadas no worker, sem catálogo, API ou conta adicional. Opção sem música e volume de 5–25%; a trilha é reduzida durante a fala por compressão sidechain. Não há promessa de ausência de reivindicações automáticas e o usuário deve ter direitos sobre o vídeo original.
+- Enquadramento vertical automático: amostragem de até cinco frames com OpenCV local, recorte horizontal estável quando os rostos cabem e imagem inteira com fundo desfocado quando não há confiança ou há pessoas afastadas. Não é rastreamento contínuo de locutor. Controles de recorte central e imagem inteira também disponíveis.
+- Revisão permite escolher trilha, volume e enquadramento por corte. A prévia da revisão é o vídeo original; a edição aparece no MP4 exportado.
+- A seleção editorial favorece pausas naturais nas bordas e penaliza trechos com silêncio prolongado, mantendo intervalos contínuos (sem remover fala interna).
+- Atualize o worker Render e a pasta site/ no Netlify. A nova dependência OpenCV é instalada no Dockerfile através de requirements.txt. Em instâncias gratuitas, a exportação e a detecção podem levar mais tempo. Não exige chave nova; os modelos de transcrição e metadados existentes permanecem como antes.

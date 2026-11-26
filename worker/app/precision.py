@@ -89,13 +89,16 @@ def _candidate_slices(segments: list[dict], minimum: float, maximum: float):
     targets = (minimum, minimum + .35 * (maximum - minimum), minimum + .70 * (maximum - minimum), maximum)
     used = set()
     for i in range(len(segments)):
-        start = max(0.0, starts[i] - .3)
+        # Pad into silence only; avoid cutting the previous phrase into the hook.
+        before = max(0., starts[i] - ends[i-1]) if i else starts[i]
+        start = max(0., starts[i] - min(.35, before * .5))
         for target in targets:
             j = bisect.bisect_left(ends, start + target, lo=i)
             for k in (j - 1, j, j + 1):
                 if not i <= k < len(segments) or (i, k) in used:
                     continue
-                finish = ends[k] + .3
+                after = max(0., starts[k+1] - ends[k]) if k + 1 < len(starts) else .8
+                finish = ends[k] + min(.4, after * .5)
                 if minimum <= finish - start <= maximum:
                     used.add((i, k))
                     yield i, k, round(start, 2), round(finish, 2)
@@ -135,7 +138,14 @@ def select_precision_clips(segments: list[dict], profile: str, count: int,
         # Do not rank a nearly silent passage highly merely because of punctuation.
         if len(_tokens(" ".join(s["text"] for s in group))) / max(end - start, 1) < .5:
             penalty += 15
-        scores["overall"] = max(0, scores["overall"] - penalty)
+        # Prefer natural phrase boundaries and avoid long dead-air stretches.
+        before = max(0., float(group[0]["start"]) - float(valid[i-1]["end"])) if i else .5
+        after = max(0., float(valid[k+1]["start"]) - float(group[-1]["end"])) if k+1 < len(valid) else .5
+        gaps = [max(0., float(b["start"]) - float(a["end"])) for a,b in zip(group, group[1:])]
+        silence = sum(max(0., gap - 1.2) for gap in gaps)
+        penalty += min(15, round(35 * silence / max(end-start, 1)))
+        bonus = (3 if before >= .25 else 0) + (4 if after >= .25 else 0)
+        scores["overall"] = min(100, max(0, scores["overall"] + bonus - penalty))
         suggestions.append({
             "start": start, "end": round(end, 2), "duration": round(end - start, 2),
             "transcript": " ".join(s["text"].strip() for s in group)[:12000],

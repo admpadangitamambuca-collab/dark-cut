@@ -18,6 +18,7 @@ import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .engine import ai_metadata, inspect_duration, render_clip, select_clips, transcribe, transcription_backend_ready, write_srt
 from . import storage
 from .precision import select_precision_clips
+from .editorial import render_edited_clip
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ LOCK = threading.Lock()
 ACTIVE: set[str] = set()
 UPLOADS: dict[str, dict] = {}
 
-app = FastAPI(title="DarkCut AI — File Studio", version="3.2.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="DarkCut AI — File Studio", version="3.3.0", docs_url=None, redoc_url=None)
 allowed = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:8888,http://localhost:8000").split(",") if s.strip()]
 app.add_middleware(
     CORSMiddleware, allow_origins=allowed, allow_credentials=False,
@@ -54,6 +56,9 @@ class JobSettings(BaseModel):
     min_seconds: int = Field(default=25, ge=10, le=90)
     max_seconds: int = Field(default=60, ge=15, le=120)
     subtitles: bool = True
+    framing: Literal["classic", "auto", "fill", "fit"] = "classic"
+    music: Literal["none", "ambient", "pulse", "cinematic"] = "none"
+    music_volume: int = Field(default=12, ge=5, le=25)
     # Review mode is opt-in: sites still running v3.1 retain the existing flow.
     review_before_render: bool = False
     shorts_count: int = Field(default=3, ge=0, le=5)
@@ -69,6 +74,9 @@ class RenderChoice(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
     title: str = Field(min_length=1, max_length=100)
+    framing: Literal["classic", "auto", "fill", "fit"] | None = None
+    music: Literal["none", "ambient", "pulse", "cinematic"] | None = None
+    music_volume: int | None = Field(default=None, ge=5, le=25)
 
     @field_validator("start", "end")
     @classmethod
@@ -398,7 +406,14 @@ def do_precision_render(job_id: str, settings: JobSettings, source: Path,
             srt = subtitle_file if settings.subtitles and write_srt(segments, item.start, item.end, subtitle_file) else None
             style = "vertical" if mode == "shorts" else "horizontal"
             filename = f"corte_{i:02d}_{style}.mp4"
-            render_clip(source, item.start, item.end, directory / filename, style, srt)
+            framing = item.framing or settings.framing
+            music = item.music or settings.music
+            volume = item.music_volume if item.music_volume is not None else settings.music_volume
+            if framing != "classic" or music != "none":
+                render_edited_clip(source, item.start, item.end, directory / filename, style, srt,
+                                   framing=framing, music=music, music_volume=volume)
+            else:
+                render_clip(source, item.start, item.end, directory / filename, style, srt)
             exported.append(filename)
             fields = {k: proposal[k] for k in ("description", "caption", "hashtags", "metadata_source")}
             fields.update(title=item.title.strip(), summary=proposal["description"])
@@ -407,6 +422,7 @@ def do_precision_render(job_id: str, settings: JobSettings, source: Path,
                 "start": round(item.start, 2), "end": round(item.end, 2),
                 "duration": round(item.end - item.start, 2), "scores": proposal["scores"],
                 "transcript": text[:12000], **fields,
+                "editing": {"framing": framing, "music": music, "music_volume": volume},
                 "files": {style: f"/api/jobs/{job_id}/files/{filename}"},
             }
             publication = (
@@ -467,7 +483,7 @@ def _upload_state(job_id: str, token: str) -> dict:
 @app.get("/api/health")
 def health():
     return {
-        "ok": True, "version": "3.2.0", "upload_only": True, "review_supported": True,
+        "ok": True, "version": "3.3.0", "upload_only": True, "review_supported": True, "editorial_v2": True,
         "transcription_ready": transcription_backend_ready(),
         "ai_metadata_enabled": bool(os.getenv("OPENAI_API_KEY")),
         "transcription_model": os.getenv("WHISPER_MODEL", "tiny"),

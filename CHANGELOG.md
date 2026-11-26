@@ -1,3 +1,10 @@
+## 3.3.0 — Creative Studio
+
+- Trilhas originais locais, controle de volume e ducking de voz.
+- Enquadramento conservador por detecção de rostos com fallback de imagem completa desfocada.
+- Ajustes por corte na revisão e ranking com limites de fala e pausas mais naturais.
+- Preservada a correção HTTP 422 e compatibilidade do modo clássico.
+
 # Changelog
 
 ## 3.2.0 — Precision Cuts

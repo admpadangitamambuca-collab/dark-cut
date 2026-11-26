@@ -7,6 +7,7 @@
     originalPreview: $('original-preview'), previewName: $('file-preview-name'),
     previewData: $('file-preview-data'), shortsCount: $('shorts-count'), shortsLength: $('shorts-length'),
     normalCount: $('normal-count'), normalLength: $('normal-length'),
+    framing: $('edit-framing'), music: $('edit-music'), volume: $('edit-volume'),
     subtitles: $('include-subtitles'), error: $('form-error'), button: $('generate-btn'),
     buttonLabel: $('generate-label'), progress: $('progress-panel'), stage: $('job-stage'),
     percent: $('progress-number'), fill: $('progress-fill'), empty: $('results-empty'),
@@ -69,6 +70,7 @@
         shorts_max_seconds: 'duração máxima dos Shorts',
         traditional_min_seconds: 'duração mínima dos cortes tradicionais',
         traditional_max_seconds: 'duração máxima dos cortes tradicionais',
+        framing: 'enquadramento', music: 'trilha sonora', music_volume: 'volume da música',
       };
       const errors = data.detail.map((entry) => {
         const field = Array.isArray(entry.loc)
@@ -226,6 +228,7 @@
         shorts_min_seconds: shortParts[0], shorts_max_seconds: shortParts[1],
         traditional_min_seconds: normalParts[0], traditional_max_seconds: normalParts[1],
         subtitles: els.subtitles.checked,
+        framing: els.framing.value, music: els.music.value, music_volume: Number(els.volume.value),
       });
       currentJob = result.id;
       await poll(result.id);
@@ -319,7 +322,7 @@
     els.reviewError.hidden = true;
     els.reviewPlayer.removeAttribute('src');
     if (localPreviewUrl) els.reviewPlayer.src = localPreviewUrl;
-    els.reviewSummary.textContent = `${job.suggestions.length} sugestões avaliadas em dois perfis. Ajuste o início, o fim e o título; desmarque o que não deseja exportar.`;
+    els.reviewSummary.textContent = `${job.suggestions.length} sugestões avaliadas. Ajuste início, fim, título, enquadramento e trilha por corte. A prévia nesta etapa mostra o vídeo original; a edição será aplicada na exportação.`;
     if (job.omitted_profiles?.length) {
       els.reviewSummary.textContent += ` Sem trechos adequados para: ${job.omitted_profiles.join(', ')}.`;
     }
@@ -331,12 +334,22 @@
       const isShort = proposal.profile === 'shorts';
       const score = proposal.scores || {};
       const title = proposal.title || 'Destaque do vídeo';
+      const cfg = job.settings || {};
+      const optionList = (items, selected) => items.map(([value,label]) => '<option value="' + value + '"' + (selected === value ? ' selected' : '') + '>' + label + '</option>').join('');
+      const frameOptions = optionList([['auto','Inteligente'],['fit','Imagem completa'],['fill','Recorte central'],['classic','Clássico']], cfg.framing || 'classic');
+      const musicOptions = optionList([['none','Sem música'],['ambient','Ambiente'],['pulse','Pulso'],['cinematic','Cinemática']], cfg.music || 'none');
+      const volumeOptions = optionList([['5','5%'],['8','8%'],['12','12%'],['18','18%'],['25','25%']], String(cfg.music_volume || 12));
       const metrics = Object.entries(labels).map(([key,label]) => `<div class="review-metric"><span>${label}</span><span>${Number(score[key] || 0)}/100</span><div class="review-track"><div style="width:${Math.min(100, Math.max(0, Number(score[key]) || 0))}%"></div></div></div>`).join('');
       article.innerHTML = `
         <div class="review-card-head"><label class="review-check"><input class="review-select" type="checkbox" checked><span>${isShort ? '▯ SHORTS 9:16' : '▭ TRADICIONAL 16:9'} · ${escapeHtml(proposal.id)}</span></label><span class="review-score">${Number(score.overall || 0)}<small>/100</small></span></div>
         <div class="review-metrics">${metrics}</div>
         <label class="field-label">TÍTULO SUGERIDO<input class="review-title-input" type="text" maxlength="100" value="${escapeHtml(title)}" aria-label="Título do corte ${escapeHtml(proposal.id)}"></label>
         <div class="review-time-fields"><label class="field-label">INÍCIO (SEG.)<input class="review-start-input" type="number" step="0.1" min="0" max="${Number(job.source_duration)}" value="${Number(proposal.start)}"></label><label class="field-label">FIM (SEG.)<input class="review-end-input" type="number" step="0.1" min="0" max="${Number(job.source_duration)}" value="${Number(proposal.end)}"></label></div>
+        <div class="field-columns precision-fields">
+          <label class="field-label">ENQUADRAMENTO<div class="select-shell"><select class="review-framing">${frameOptions}</select><span>⌄</span></div></label>
+          <label class="field-label">TRILHA<div class="select-shell"><select class="review-music">${musicOptions}</select><span>⌄</span></div></label>
+          <label class="field-label">VOLUME<div class="select-shell"><select class="review-volume">${volumeOptions}</select><span>⌄</span></div></label>
+        </div>
         <p class="review-transcript">${escapeHtml((proposal.transcript || '').slice(0,360))}</p>
         <button type="button" class="review-preview-btn">▶ Assistir trecho (${clock(proposal.start)}–${clock(proposal.end)})</button>`;
       article.querySelector('.review-select').addEventListener('change', updateReviewSelection);
@@ -383,7 +396,9 @@
         els.reviewError.textContent = `Revise os horários e o título de ${card.dataset.id}. Duração permitida: ${minLength}–${maxLength} segundos.`;
         return;
       }
-      choices.push({id:card.dataset.id, start, end, title});
+      choices.push({id:card.dataset.id, start, end, title,
+        framing:card.querySelector('.review-framing').value, music:card.querySelector('.review-music').value,
+        music_volume:Number(card.querySelector('.review-volume').value)});
     }
     if (!choices.length) return;
     els.reviewError.hidden = true;
@@ -501,10 +516,11 @@
   async function checkWorker() {
     const status = await api('/api/health');
     if (!status.upload_only || !status.review_supported) throw new Error('Atualize o motor Render para a versão 3.2 antes de usar a revisão dos cortes.');
+    if (!status.editorial_v2) throw new Error('Atualize o motor Render para a versão 3.3 para usar as novas opções de edição.');
     maxUploadBytes = Number(status.max_upload_bytes) || maxUploadBytes;
     if (currentFile) showSelectedFile(currentFile);
     else showSelectedFile(null);
-    els.workerFeedback.textContent = `Motor conectado (v${status.version}). Revisão Precision Cuts habilitada. Textos: ${status.ai_metadata_enabled ? 'IA conectada' : 'sugestões baseadas na transcrição (sem API de IA)'}.`;
+    els.workerFeedback.textContent = `Motor conectado (v${status.version}). Estúdio de edição 3.3 habilitado. Textos: ${status.ai_metadata_enabled ? 'IA conectada' : 'sugestões baseadas na transcrição (sem API de IA)'}.`;
   }
   els.saveWorker.addEventListener('click', async () => {
     const value = els.workerUrl.value.trim().replace(/\/$/, '');

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0c16">
   <meta name="description" content="DarkCut AI: transforme vídeos e lives arquivadas em cortes com títulos, hashtags e resumos prontos para copiar.">
-  <title>DarkCut AI 3.2 — Precision Cuts</title>
+  <title>DarkCut AI 3.3 — Creative Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,7 +23,7 @@
     </div>
     <div class="sidebar-bottom">
       <div class="side-tip"><span class="tip-star">✦</span><strong>Do arquivo ao corte.</strong><p>Envie um vídeo inteiro. Receba cortes e textos prontos para publicar.</p></div>
-      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v3.2</span></div>
+      <div class="sidebar-footer"><span class="status-dot"></span> DarkCut AI <span>v3.3</span></div>
     </div>
   </aside>
 
@@ -68,6 +68,14 @@
               <div class="export-type"><span class="format-glyph">▭</span><div><strong>Corte tradicional</strong><small>Horizontal 16:9 · 1280 × 720</small></div><span class="format-ready">✓</span></div>
             </div>
             <div class="subtitles-row"><div class="subtitles-symbol">▤</div><div class="subtitles-desc"><strong>Legendas automáticas no vídeo</strong><span>Transcrever o áudio e incluir legendas nos dois formatos</span></div><label class="switch"><input id="include-subtitles" type="checkbox" checked><span class="switch-track"></span><span class="sr-only">Habilitar legendas</span></label></div>
+            <div class="field-divider"></div>
+            <div class="options-heading"><strong>Estúdio de edição</strong><span>SEM API PAGA · EDIÇÃO LOCAL NO MOTOR</span></div>
+            <div class="field-columns precision-fields">
+              <div class="field-group"><label class="field-label" for="edit-framing">ENQUADRAMENTO</label><div class="select-shell"><select id="edit-framing"><option value="auto" selected>Inteligente · rostos / imagem completa</option><option value="fit">Imagem completa · fundo desfocado</option><option value="fill">Preencher · recorte central</option><option value="classic">Original · edição clássica</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="edit-music">TRILHA SONORA ORIGINAL</label><div class="select-shell"><select id="edit-music"><option value="none">Sem música</option><option value="ambient" selected>Ambiente · podcast</option><option value="pulse">Pulso · dinâmico</option><option value="cinematic">Cinemática · suave</option></select><span>⌄</span></div></div>
+              <div class="field-group"><label class="field-label" for="edit-volume">VOLUME DA TRILHA</label><div class="select-shell"><select id="edit-volume"><option value="5">5% · discreto</option><option value="8">8% · baixo</option><option value="12" selected>12% · equilibrado</option><option value="18">18% · presente</option><option value="25">25% · intenso</option></select><span>⌄</span></div></div>
+            </div>
+            <p class="helper">Trilhas sintetizadas pelo DarkCut, sem gravações de terceiros. A música é reduzida automaticamente quando há fala. Não há garantia contra reivindicações automáticas de terceiros. Confira o resultado final antes de publicar.</p>
             <div id="form-error" role="alert" class="error-message" hidden></div>
             <button class="primary-btn" id="generate-btn" type="submit"><span class="btn-star">✦</span><span id="generate-label">Analisar vídeo e revisar cortes</span><span class="btn-arrow">↗</span></button>
             <p class="footer-note">Nenhum vídeo é publicado automaticamente. Utilize apenas arquivos que tenha autorização para editar.</p>
@@ -101,6 +109,6 @@
   </main>
 </div>
 <script src="./config.js"></script>
-<script src="./app.js" defer></script>
+<script src="./app.js?v=3.3.0" defer></script>
 </body>
 </html>
