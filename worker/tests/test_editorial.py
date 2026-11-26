@@ -46,3 +46,30 @@ def test_command_has_ducking_and_removes_temporary_music(monkeypatch, tmp_path):
     graph = args[args.index("-filter_complex")+1]
     assert "sidechaincompress" in graph and "overlay" in graph and "amix" in graph
     assert not dest.with_suffix(".music.wav").exists()
+
+def test_real_ffmpeg_export_with_music(tmp_path):
+    import json
+    import shutil
+    import subprocess
+    import pytest
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("FFmpeg is not installed")
+    original = tmp_path / "source.mp4"
+    dest = tmp_path / "edited.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=12",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                    "-t", "3", "-c:v", "libx264", "-threads:v", "1",
+                    "-c:a", "aac", str(original)], check=True, timeout=30)
+    editorial.render_edited_clip(original, 0, 2, dest, "vertical", None,
+                                framing="fit", music="ambient", music_volume=12)
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_streams",
+                            "-of", "json", str(dest)], capture_output=True,
+                           text=True, check=True, timeout=10)
+    streams = json.loads(probe.stdout)["streams"]
+    video = next(s for s in streams if s["codec_type"] == "video")
+    audio = next(s for s in streams if s["codec_type"] == "audio")
+    assert (video["width"], video["height"]) == (720, 1280)
+    assert audio["codec_name"] == "aac" and audio["channels"] == 2
+    assert abs(float(video["duration"]) - 2) < .2
+    assert not dest.with_suffix(".music.wav").exists()

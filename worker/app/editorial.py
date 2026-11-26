@@ -76,6 +76,8 @@ def safe_face_center(samples: list[tuple[float, list[tuple[float, float]]]]) -> 
     if len(detected) < max(2, math.ceil(len(samples) * .4)):
         return None
     aspect = median([a for a, _ in detected])
+    if aspect < 9 / 16 - .015:
+        return None
     if aspect <= 9 / 16:
         return .5
     width = (9 / 16) / aspect

@@ -221,6 +221,8 @@
     const normalCount = Number(els.normalCount.value);
     if (!shortsCount && !normalCount) { setError('Escolha ao menos um Short ou corte tradicional.'); busy(false); return; }
     try {
+      const health = await api('/api/health', { signal: AbortSignal.timeout(90000) });
+      if (!health.editorial_v2) throw new Error('O motor ainda não está na versão 3.3. Atualize o serviço Render para usar o estúdio de edição.');
       const result = await sendVideoInChunks(currentFile, {
         // Em modo de revisão, o backend usa as durações independentes abaixo.
         // Não enviar os campos legados (max_seconds <= 120), que rejeitavam Shorts de 90–180 s.
@@ -532,8 +534,8 @@
     catch (error) { els.workerFeedback.textContent = `Conexão não confirmada: ${error.message}`; }
   });
   els.workerUrl.value = worker;
-  if (isWorkerUrl(worker)) checkWorker().catch(() => {
-    els.workerFeedback.textContent = 'O motor pode estar iniciando. Use Salvar conexão para verificar novamente.';
+  if (isWorkerUrl(worker)) checkWorker().catch(error => {
+    els.workerFeedback.textContent = error.message + ' Use Salvar conexão para verificar novamente.';
   });
   els.form.addEventListener('submit', start);
   window.addEventListener('hashchange', updateNav);
